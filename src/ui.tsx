@@ -166,6 +166,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         <DeleteProfile
           service={service}
           profile={profile}
+          width={Math.max(1, Math.min(72, terminalSize.width - 6))}
           onDone={(message) => {
             setFeedback({ variant: 'success', title: 'PROFILE REMOVED', message });
             setScreen('list');
@@ -585,7 +586,12 @@ function NewProfile({
     const value = field === 0 ? id : displayName;
     const setValue = field === 0 ? setId : setDisplayName;
     const isTextField = field < 2;
-    const isBackspace = key.backspace || input === '\b' || input === '\x7f';
+    const isBackspace =
+      key.backspace ||
+      input === '\b' ||
+      input === '\x7f' ||
+      input === '\x1b[8~' ||
+      input === '\x1b[127~';
     const isDelete = key.delete || input === '\x1b[3~';
 
     if (key.tab) {
@@ -609,8 +615,9 @@ function NewProfile({
       setCursor(value.length);
     } else if (isBackspace && isTextField) {
       if (cursor > 0) {
-        setValue((current) => current.slice(0, cursor - 1) + current.slice(cursor));
-        setCursor((position) => position - 1);
+        const nextCursor = cursor - 1;
+        setValue((current) => current.slice(0, nextCursor) + current.slice(cursor));
+        setCursor(nextCursor);
       }
     } else if (isDelete && isTextField) {
       setValue((current) => current.slice(0, cursor) + current.slice(cursor + 1));
@@ -749,10 +756,12 @@ function NewProfile({
 function DeleteProfile({
   service,
   profile,
+  width,
   onDone,
 }: {
   service: AlsatoolsService;
   profile: Profile;
+  width: number;
   onDone: (message: string) => void;
 }) {
   const [error, setError] = useState('');
@@ -784,24 +793,28 @@ function DeleteProfile({
   });
 
   return (
-    <Panel title={`REMOVE ${profile.displayName.toUpperCase()}?`} color="red">
-      <Box flexDirection="column" paddingY={1} gap={1}>
-        <Text>This removes only the managed definition for {profile.pcmName}.</Text>
-        <Text>
-          <Text color="yellow" bold>
-            K
-          </Text>{' '}
-          remove interface, keep controls
-        </Text>
-        <Text>
-          <Text color="red" bold>
-            X
-          </Text>{' '}
-          remove interface and delete controls file
-        </Text>
-        <Text color={MUTED}>Esc cancel</Text>
-        {error && <Text color="red">! {error}</Text>}
+    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
+      <Box width={width}>
+        <Panel title={`REMOVE ${profile.displayName.toUpperCase()}?`} color="red">
+          <Box flexDirection="column" paddingY={1} gap={1}>
+            <Text>This removes only the managed definition for {profile.pcmName}.</Text>
+            <Text>
+              <Text color="yellow" bold>
+                K
+              </Text>{' '}
+              remove interface, keep controls
+            </Text>
+            <Text>
+              <Text color="red" bold>
+                X
+              </Text>{' '}
+              remove interface and delete controls file
+            </Text>
+            <Text color={MUTED}>Esc cancel</Text>
+            {error && <Text color="red">! {error}</Text>}
+          </Box>
+        </Panel>
       </Box>
-    </Panel>
+    </Box>
   );
 }
