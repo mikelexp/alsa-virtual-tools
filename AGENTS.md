@@ -4,8 +4,8 @@
 
 `alsa-virtual-tools` is a Linux TUI/CLI for managing `alsaequal` virtual ALSA PCMs. It owns only:
 
-- `~/.config/alsatools/`
-- the marked `ALSATOOLS` block in `~/.asoundrc`
+- `~/.config/alsa-virtual-tools/`
+- the marked `ALSA-VIRTUAL-TOOLS` block in `~/.asoundrc`
 
 It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, or unrelated user ALSA configuration.
 

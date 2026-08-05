@@ -1,6 +1,6 @@
 # alsa-virtual-tools
 
-Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal` virtual PCMs. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSATOOLS` managed block, after an explicit create/apply action.
+Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal` virtual PCMs. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSA-VIRTUAL-TOOLS` managed block, after an explicit create/apply action.
 
 ## Install: Arch / CachyOS
 
@@ -54,7 +54,7 @@ alsa-virtual-tools qasmixer dac_eq
 ```text
 ctl.dac_eq {
     type equal
-    controls "/home/me/.config/alsatools/controls/dac_eq.bin"
+    controls "/home/me/.config/alsa-virtual-tools/controls/dac_eq.bin"
     library "/usr/lib/ladspa/caps.so"
     module "Eq10"
     channels 2
@@ -63,7 +63,7 @@ ctl.dac_eq {
 pcm.dac_eq_internal {
     type equal
     slave.pcm "plughw:CARD=USB_DAC,DEV=0"
-    controls "/home/me/.config/alsatools/controls/dac_eq.bin"
+    controls "/home/me/.config/alsa-virtual-tools/controls/dac_eq.bin"
     library "/usr/lib/ladspa/caps.so"
     module "Eq10"
     channels 2

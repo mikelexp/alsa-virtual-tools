@@ -15,9 +15,9 @@ afterEach(async () => {
 
 describe('Store', () => {
   it('creates the approved controls directory before validating ALSA config', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsatools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
     temporaryDirectories.push(home);
-    const configDir = path.join(home, '.config', 'alsatools');
+    const configDir = path.join(home, '.config', 'alsa-virtual-tools');
     const paths: Paths = {
       home,
       configDir,
@@ -26,7 +26,7 @@ describe('Store', () => {
       configFile: path.join(configDir, 'config.json'),
       controlsDir: path.join(configDir, 'controls'),
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsatools.log'),
+      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const config: Config = {
@@ -53,18 +53,18 @@ describe('Store', () => {
   });
 
   it('deletes only a regular controls file inside its managed directory', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsatools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
     temporaryDirectories.push(home);
-    const controlsDir = path.join(home, '.config', 'alsatools', 'controls');
+    const controlsDir = path.join(home, '.config', 'alsa-virtual-tools', 'controls');
     const paths: Paths = {
       home,
       configDir: path.dirname(controlsDir),
       stateDir: path.join(home, '.state'),
       cacheDir: path.join(home, '.cache'),
-      configFile: path.join(home, '.config', 'alsatools', 'config.json'),
+      configFile: path.join(home, '.config', 'alsa-virtual-tools', 'config.json'),
       controlsDir,
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsatools.log'),
+      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const controls = path.join(controlsDir, 'test_eq.bin');

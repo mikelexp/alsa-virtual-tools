@@ -43,7 +43,7 @@ describe('managed ALSA block', () => {
     );
   });
   it('rejects malformed markers and detects external equal definitions', () => {
-    expect(() => replaceManagedBlock('# BEGIN ALSATOOLS\n', 'x')).toThrow();
+    expect(() => replaceManagedBlock('# BEGIN ALSA-VIRTUAL-TOOLS\n', 'x')).toThrow();
     expect(unmanagedEqualDefinitions('pcm.external { type equal\n }')).toEqual(['external']);
   });
 });

@@ -17,16 +17,16 @@ export function getPaths(env: NodeJS.ProcessEnv = process.env): Paths {
   const configHome = env.XDG_CONFIG_HOME ?? path.join(home, '.config');
   const stateHome = env.XDG_STATE_HOME ?? path.join(home, '.local', 'state');
   const cacheHome = env.XDG_CACHE_HOME ?? path.join(home, '.cache');
-  const configDir = path.join(configHome, 'alsatools');
+  const configDir = path.join(configHome, 'alsa-virtual-tools');
   return {
     home,
     configDir,
-    stateDir: path.join(stateHome, 'alsatools'),
-    cacheDir: path.join(cacheHome, 'alsatools'),
+    stateDir: path.join(stateHome, 'alsa-virtual-tools'),
+    cacheDir: path.join(cacheHome, 'alsa-virtual-tools'),
     configFile: path.join(configDir, 'config.json'),
     controlsDir: path.join(configDir, 'controls'),
-    backupsDir: path.join(stateHome, 'alsatools', 'backups'),
-    logFile: path.join(stateHome, 'alsatools', 'alsatools.log'),
+    backupsDir: path.join(stateHome, 'alsa-virtual-tools', 'backups'),
+    logFile: path.join(stateHome, 'alsa-virtual-tools', 'alsa-virtual-tools.log'),
     asoundrc: path.join(home, '.asoundrc'),
   };
 }
