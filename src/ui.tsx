@@ -98,10 +98,10 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
     if (key.ctrl && input === 'c') exit();
     if (feedback) return;
     if (screen === 'list') {
-      if (input === 'x') exit();
-      if (key.downArrow || input === 'j')
+      if (input === 'q') exit();
+      if (key.downArrow)
         setSelection((value) => Math.min(value + 1, Math.max(0, profiles.length - 1)));
-      if (key.upArrow || input === 'k') setSelection((value) => Math.max(0, value - 1));
+      if (key.upArrow) setSelection((value) => Math.max(0, value - 1));
       if (key.return && profiles[selection]) setScreen('detail');
       if (input === 'n') setScreen('new');
       if (input === 'e' && profiles[selection]) setScreen('edit');
@@ -109,7 +109,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       if (input === '?') setScreen('help');
       if (input === 'd' && profiles[selection]) setScreen('delete');
       if (input === 'i') setScreen('diagnostics');
-      if (input === 'q' && profiles[selection])
+      if (input === 'm' && profiles[selection])
         void service
           .qasmixer(profiles[selection])
           .then(() =>
@@ -175,7 +175,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         />
       )}
       <Box flexGrow={1} />
-      {screen === 'list' ? <Navigation /> : <Text color={MUTED}>Esc back</Text>}
+      {screen === 'list' ? <Navigation /> : <Text color={MUTED}>esc back</Text>}
       {feedback && (
         <FeedbackModal
           feedback={feedback}
@@ -199,7 +199,9 @@ function FeedbackModal({
   onClose: () => void;
   width: number;
 }) {
-  useInput(() => onClose());
+  useInput((input, key) => {
+    if (key.return || key.escape) onClose();
+  });
 
   return (
     <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
@@ -218,7 +220,7 @@ function FeedbackModal({
       >
         <StatusMessage variant={feedback.variant}>{feedback.title}</StatusMessage>
         <Text color={TEXT}>{feedback.message}</Text>
-        <Text color={MUTED}>Press any key to continue</Text>
+        <Text color={MUTED}>enter to continue, esc to close</Text>
       </Box>
     </Box>
   );
@@ -294,17 +296,17 @@ function Navigation() {
   return (
     <>
       <Box marginTop={1} gap={2} flexWrap="wrap">
-        <KeyHint keyName="Enter" label="details" />
-        <KeyHint keyName="N" label="new" />
-        <KeyHint keyName="E" label="edit" />
-        <KeyHint keyName="D" label="delete" />
-        <KeyHint keyName="Q" label="QasMixer" />
+        <KeyHint keyName="enter" label="details" />
+        <KeyHint keyName="n" label="new" />
+        <KeyHint keyName="e" label="edit" />
+        <KeyHint keyName="d" label="delete" />
+        <KeyHint keyName="m" label="QasMixer" />
       </Box>
       <Box gap={2} flexWrap="wrap">
-        <KeyHint keyName="R" label="refresh" />
-        <KeyHint keyName="I" label="diagnostics" />
+        <KeyHint keyName="r" label="refresh" />
+        <KeyHint keyName="i" label="diagnostics" />
         <KeyHint keyName="?" label="help" />
-        <KeyHint keyName="X" label="exit" />
+        <KeyHint keyName="q" label="exit" />
       </Box>
     </>
   );
@@ -336,7 +338,7 @@ function List({
         <Panel title="NO PROFILES YET" color="magenta">
           <Box flexDirection="column" paddingY={1}>
             <Text color="white">Create a profile to expose an equalized ALSA output.</Text>
-            <Text color={MUTED}>Press N to select a physical playback device.</Text>
+            <Text color={MUTED}>press n to select a physical playback device.</Text>
           </Box>
         </Panel>
       ) : (
@@ -470,50 +472,51 @@ function Help() {
       <Box flexDirection="column" paddingY={1} gap={1}>
         <Text>
           <Text color={ACCENT} bold>
-            Arrows / j / k
+            up / down arrows
           </Text>{' '}
           select profiles
         </Text>
         <Text>
           <Text color={ACCENT} bold>
-            Enter
+            enter
           </Text>{' '}
           open details{' '}
           <Text color={ACCENT} bold>
-            N
+            n
           </Text>{' '}
           new{' '}
           <Text color={ACCENT} bold>
-            E
+            e
           </Text>{' '}
           edit
         </Text>
         <Text>
           <Text color={ACCENT} bold>
-            D
+            d
           </Text>{' '}
           delete{' '}
           <Text color={ACCENT} bold>
-            Q
+            m
           </Text>{' '}
           QasMixer{' '}
           <Text color={ACCENT} bold>
-            R
+            r
           </Text>{' '}
           refresh
         </Text>
         <Text>
           <Text color={ACCENT} bold>
-            I
+            i
           </Text>{' '}
           diagnostics{' '}
           <Text color={ACCENT} bold>
-            X
+            q
           </Text>{' '}
           exit
         </Text>
         <Text color={MUTED}>
-          All changes are explicit. ALSA configuration is never written on startup.
+          esc goes back or cancels. ctrl-c exits immediately. ALSA configuration is never written on
+          startup.
         </Text>
       </Box>
     </Panel>
@@ -581,6 +584,7 @@ function NewProfile({
   const [field, setField] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useInput((input, key) => {
     const value = field === 0 ? id : displayName;
@@ -595,7 +599,7 @@ function NewProfile({
     const isDelete = key.delete || input === '\x1b[3~';
 
     if (key.tab) {
-      const nextField = (field + 1) % 4;
+      const nextField = (field + (key.shift ? -1 : 1) + 4) % 4;
       setField(nextField);
       setCursor(nextField === 0 ? id.length : nextField === 1 ? displayName.length : 0);
     } else if (key.ctrl && input === 'a' && isTextField) {
@@ -621,9 +625,9 @@ function NewProfile({
       }
     } else if (isDelete && isTextField) {
       setValue((current) => current.slice(0, cursor) + current.slice(cursor + 1));
-    } else if (key.upArrow || (field === 2 && input === 'k')) {
+    } else if (key.upArrow && field === 2) {
       setDevice((current) => Math.max(0, current - 1));
-    } else if (key.downArrow || (field === 2 && input === 'j')) {
+    } else if (key.downArrow && field === 2) {
       setDevice((current) => Math.min(devices.length - 1, current + 1));
     } else if (key.return && field < 3) {
       const nextField = field + 1;
@@ -633,6 +637,8 @@ function NewProfile({
       const selected = devices[device];
       if (!selected) return setError('Select a playback device');
       if (!id) return setError('Identifier is required');
+      if (busy) return;
+      setBusy(true);
       void (async () => {
         try {
           const config = await service.store.load();
@@ -667,6 +673,8 @@ function NewProfile({
           );
         } catch (error) {
           setError(error instanceof Error ? error.message : String(error));
+        } finally {
+          setBusy(false);
         }
       })();
     } else if (input && !key.ctrl && !key.meta && isTextField) {
@@ -747,7 +755,9 @@ function NewProfile({
         </Text>
         <Text color={field === 3 ? 'green' : undefined}>[ Save profile ]</Text>
       </Box>
-      <Text color={MUTED}>Tab/Enter advances, Up/Down chooses target, Esc cancels</Text>
+      <Text color={MUTED}>
+        tab/enter advances, shift-tab goes back, arrows choose target, esc cancels
+      </Text>
       {error && <Text color="red">! {error}</Text>}
     </Box>
   );
@@ -765,7 +775,10 @@ function DeleteProfile({
   onDone: (message: string) => void;
 }) {
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const remove = (deleteControls: boolean) => {
+    if (busy) return;
+    setBusy(true);
     void (async () => {
       try {
         const config = await service.store.load();
@@ -783,13 +796,15 @@ function DeleteProfile({
         );
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusy(false);
       }
     })();
   };
 
   useInput((input) => {
     if (input === 'k') remove(false);
-    if (input === 'x') remove(true);
+    if (input === 'd') remove(true);
   });
 
   return (
@@ -800,17 +815,17 @@ function DeleteProfile({
             <Text>This removes only the managed definition for {profile.pcmName}.</Text>
             <Text>
               <Text color="yellow" bold>
-                K
+                k
               </Text>{' '}
               remove interface, keep controls
             </Text>
             <Text>
               <Text color="red" bold>
-                X
+                d
               </Text>{' '}
               remove interface and delete controls file
             </Text>
-            <Text color={MUTED}>Esc cancel</Text>
+            <Text color={MUTED}>esc cancel</Text>
             {error && <Text color="red">! {error}</Text>}
           </Box>
         </Panel>
