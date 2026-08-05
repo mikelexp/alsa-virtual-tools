@@ -5,12 +5,19 @@ Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal`
 ## Install: Arch / CachyOS
 
 ```bash
-sudo pacman -S nodejs pnpm alsa-utils caps qastools
-# use an AUR helper you already trust; do not run this from alsa-virtual-tools automatically
-paru -S alsaequal
-pnpm install
-pnpm build
-pnpm start
+paru -S alsa-virtual-tools-bin
+alsa-virtual-tools doctor
+```
+
+The release binary includes its JavaScript runtime and npm dependencies. It does
+not include system ALSA components, which remain package dependencies:
+`alsa-utils`, `caps`, `alsaequal`, and optionally `qastools` for QasMixer.
+
+To install a release manually, download the tarball from GitHub Releases, extract
+it, and run:
+
+```bash
+./install.sh
 ```
 
 The dependency check locates `caps.so`, checks command executables and the conventional equal PCM/CTL modules. It reports missing pieces and suggested commands, but it never installs packages or invokes `sudo`.
@@ -24,6 +31,32 @@ pnpm test
 pnpm lint
 pnpm build
 pnpm start
+```
+
+## Release build
+
+The distributable Linux x86_64 executable is compiled with Bun and does not
+require Node.js, Bun, pnpm, or `node_modules` on the target machine:
+
+```bash
+bun install
+make check
+make release
+```
+
+The archive and its checksum are written to `dist/`. GitHub Releases are
+created by pushing a tag that matches the package version:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The AUR package is maintained separately as `alsa-virtual-tools-bin`. After a
+GitHub Release exists, update it with:
+
+```bash
+make aur-update VERSION=0.1.0
 ```
 
 Or use the included scripts:

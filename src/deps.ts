@@ -56,13 +56,18 @@ export async function checkDependencies(
   );
   const equalDirectory = equalModules.find((candidate) => candidate.ok)?.directory;
   const nodeCompatible = Number(process.versions.node.split('.')[0]) >= 22;
+  const bunCompatible = Boolean(process.versions.bun);
+  const runtimeCompatible = nodeCompatible || bunCompatible;
+  const runtimeDetail = process.versions.bun
+    ? `Bun ${process.versions.bun}`
+    : `Node.js ${process.versions.node}`;
   const lookup = new Map(commands);
   const dependencies: Dependency[] = [
     {
-      name: 'Node.js >= 22',
+      name: 'Bun standalone / Node.js >= 22',
       purpose: 'Run alsa-virtual-tools',
-      ok: nodeCompatible,
-      detail: process.versions.node,
+      ok: runtimeCompatible,
+      detail: runtimeDetail,
     },
     {
       name: 'aplay',
