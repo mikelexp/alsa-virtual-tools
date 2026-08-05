@@ -53,7 +53,7 @@ export class AlsatoolsService {
         ? `${process.env.LADSPA_PATH}:/usr/lib/ladspa`
         : '/usr/lib/ladspa',
     };
-    const child = spawn('qasmixer', ['--no-single', '-D', profile.ctlName], {
+    const child = spawn('qasmixer', ['-D', profile.ctlName], {
       detached: true,
       stdio: 'ignore',
       env,

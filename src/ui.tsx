@@ -7,8 +7,16 @@ import type { AlsatoolsService } from './service.js';
 import { physicalStatus } from './alsa.js';
 
 type Screen = 'list' | 'detail' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
-const statusColor = (s: PlaybackState['state'] | undefined) =>
-  s === 'Playing' ? 'green' : s === 'Unavailable' ? 'red' : s === 'XRUN' ? 'yellow' : 'gray';
+const statusColor = (s: PlaybackState['state'] | undefined, label?: string) =>
+  label === 'Connected'
+    ? 'green'
+    : label === 'Not found' || s === 'Unavailable'
+      ? 'red'
+      : s === 'Playing'
+        ? 'green'
+        : s === 'XRUN'
+          ? 'yellow'
+          : 'gray';
 export function App({ service, report }: { service: AlsatoolsService; report: DependencyReport }) {
   const { exit } = useApp();
   const [screen, setScreen] = useState<Screen>(
@@ -134,16 +142,24 @@ function List({
       {profiles.length === 0 ? (
         <Text dimColor>No managed interfaces. Press N to create one.</Text>
       ) : (
-        profiles.map((p, index) => (
-          <Text key={p.id} color={index === selection ? 'cyan' : undefined}>
-            {index === selection ? '>' : ' '} {p.enabled ? 'o' : '-'} {p.pcmName.padEnd(18)}{' '}
-            <Text color={statusColor(states[p.id]?.state)}>
-              {(states[p.id]?.state ?? 'Unavailable').padEnd(11)}
-            </Text>{' '}
-            {states[p.id]?.rate ?? '-'} {states[p.id]?.format ?? '-'} {'->'}{' '}
-            {devices.find((d) => d.target === p.target)?.cardName ?? p.target}
-          </Text>
-        ))
+        profiles.map((p, index) =>
+          (() => {
+            const device = devices.find((d) => d.target === p.target);
+            const state = states[p.id];
+            const status = device && state?.state === 'Unavailable' ? 'Connected' : state?.state;
+            const audioDetails =
+              state?.rate && state.format ? `${state.rate} ${state.format}` : 'Audio not playing';
+            return (
+              <Text key={p.id} color={index === selection ? 'cyan' : undefined}>
+                {index === selection ? '>' : ' '} {p.enabled ? 'o' : 'off'} {p.pcmName.padEnd(18)}{' '}
+                <Text color={statusColor(state?.state, status ?? 'Not found')}>
+                  {(status ?? 'Not found').padEnd(11)}
+                </Text>{' '}
+                {audioDetails} {'->'} {device?.cardName ?? p.target}
+              </Text>
+            );
+          })(),
+        )
       )}
     </Box>
   );
