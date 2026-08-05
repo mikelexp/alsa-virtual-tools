@@ -33,6 +33,13 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 
 External commands must go through the injectable `CommandRunner`; do not introduce shell-string execution for ALSA actions.
 
+## TUI Visual Rules
+
+- Keep the interactive UI fullscreen and responsive to terminal resize events.
+- Use `#315BEF` for primary accents, borders, selections, and keyboard hints; reserve green, yellow, and red for semantic status or warnings.
+- Keep playback-device rows compact with no blank line between devices.
+- Text fields must behave like normal terminal inputs: support visible cursor placement, insertion, arrows, backspace, delete, Home/End, and predictable focus movement.
+
 ## ALSA Rules
 
 - Names must match `[a-zA-Z][a-zA-Z0-9_-]*`.

@@ -1,59 +1,87 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import type { Device, PlaybackState } from './alsa.js';
+import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import type { Profile } from './model.js';
 import type { AlsatoolsService } from './service.js';
-import { physicalStatus } from './alsa.js';
 
 type Screen = 'list' | 'detail' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
-const statusColor = (s: PlaybackState['state'] | undefined, label?: string) =>
+type Color = 'green' | 'yellow' | 'red' | 'gray' | 'magenta' | 'white' | '#315BEF' | '#6f8fff';
+
+const ACCENT: Color = '#315BEF';
+const ACCENT_BRIGHT: Color = '#6f8fff';
+
+const statusColor = (state: PlaybackState['state'] | undefined, label?: string): Color =>
   label === 'Connected'
     ? 'green'
-    : label === 'Not found' || s === 'Unavailable'
+    : label === 'Not found' || state === 'Unavailable'
       ? 'red'
-      : s === 'Playing'
+      : state === 'Playing'
         ? 'green'
-        : s === 'XRUN'
+        : state === 'XRUN'
           ? 'yellow'
           : 'gray';
+
+const statusLabel = (state: PlaybackState | undefined, device?: Device) => {
+  if (device && state?.state === 'Unavailable') return 'Connected';
+  return state?.state ?? 'Not found';
+};
+
 export function App({ service, report }: { service: AlsatoolsService; report: DependencyReport }) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const [terminalSize, setTerminalSize] = useState({
+    width: stdout.columns ?? 80,
+    height: stdout.rows ?? 24,
+  });
   const [screen, setScreen] = useState<Screen>(
-    report.dependencies.every((d) => d.ok) ? 'list' : 'diagnostics',
+    report.dependencies.every((dependency) => dependency.ok) ? 'list' : 'diagnostics',
   );
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [selection, setSelection] = useState(0);
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
   const [notice, setNotice] = useState('');
+
   const refresh = async () => {
     const [nextProfiles, nextDevices] = await Promise.all([service.list(), service.devices()]);
     setProfiles(nextProfiles);
     setDevices(nextDevices);
     const mapped = await Promise.all(
-      nextProfiles.map(async (p) => {
-        const device = nextDevices.find((d) => d.target === p.target);
+      nextProfiles.map(async (profile) => {
+        const device = nextDevices.find((candidate) => candidate.target === profile.target);
         return [
-          p.id,
+          profile.id,
           device ? await physicalStatus(device) : { state: 'Unavailable' as const },
         ] as const;
       }),
     );
     setStates(Object.fromEntries(mapped));
   };
+
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const updateTerminalSize = () =>
+      setTerminalSize({ width: stdout.columns ?? 80, height: stdout.rows ?? 24 });
+    stdout.on('resize', updateTerminalSize);
+    return () => {
+      stdout.off('resize', updateTerminalSize);
+    };
+  }, [stdout]);
+
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
     if (screen === 'list') {
       if (input === 'x') exit();
       if (key.downArrow || input === 'j')
-        setSelection((v) => Math.min(v + 1, Math.max(0, profiles.length - 1)));
-      if (key.upArrow || input === 'k') setSelection((v) => Math.max(0, v - 1));
+        setSelection((value) => Math.min(value + 1, Math.max(0, profiles.length - 1)));
+      if (key.upArrow || input === 'k') setSelection((value) => Math.max(0, value - 1));
       if (key.return && profiles[selection]) setScreen('detail');
       if (input === 'n') setScreen('new');
       if (input === 'e' && profiles[selection]) setScreen('edit');
@@ -65,16 +93,23 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         void service
           .qasmixer(profiles[selection])
           .then(() => setNotice('QasMixer launched'))
-          .catch((e: Error) => setNotice(e.message));
+          .catch((error: Error) => setNotice(error.message));
     } else if (key.escape) setScreen('list');
   });
+
   const profile = profiles[selection];
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">
-        ALSA Equalizer Manager
-      </Text>
-      {notice ? <Text color="yellow">{notice}</Text> : null}
+    <Box
+      flexDirection="column"
+      width={terminalSize.width}
+      minHeight={terminalSize.height}
+      borderStyle="round"
+      borderColor={ACCENT}
+      paddingX={1}
+      paddingY={1}
+    >
+      <Header report={report} />
+      {notice ? <Notice message={notice} /> : null}
       {screen === 'list' && (
         <List profiles={profiles} selection={selection} states={states} devices={devices} />
       )}
@@ -97,9 +132,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           devices={devices}
           existing={profile}
           onDone={() => {
-            setNotice(
-              'Target changed. Stop and restart playback so clients reopen the virtual PCM.',
-            );
+            setNotice('Target changed. Restart playback to reopen the virtual PCM.');
             setScreen('list');
             void refresh();
           }}
@@ -116,15 +149,95 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           }}
         />
       )}
-      {screen === 'list' && (
-        <Text dimColor>
-          [Enter] Details [N] New [E] Edit [D] Delete [Q] QasMixer [R] Refresh [I] Doctor [?] Help
-          [X] Exit
-        </Text>
-      )}
+      <Box flexGrow={1} />
+      {screen === 'list' ? <Navigation /> : <Text dimColor>Esc back</Text>}
     </Box>
   );
 }
+
+function Header({ report }: { report: DependencyReport }) {
+  const healthy = report.dependencies.every((dependency) => dependency.ok);
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box justifyContent="space-between">
+        <Text bold color={ACCENT_BRIGHT}>
+          ALSA <Text color="white">VIRTUAL TOOLS</Text>
+        </Text>
+        <Text color={healthy ? 'green' : 'yellow'}>
+          {healthy ? '[ SYSTEM READY ]' : '[ CHECK REQUIRED ]'}
+        </Text>
+      </Box>
+      <Text dimColor>safe alsaequal profile manager / live hardware monitor</Text>
+    </Box>
+  );
+}
+
+function Notice({ message }: { message: string }) {
+  return (
+    <Box borderStyle="round" borderColor="yellow" paddingX={1} marginBottom={1}>
+      <Text color="yellow">! {message}</Text>
+    </Box>
+  );
+}
+
+function Panel({
+  title,
+  children,
+  color = ACCENT,
+}: {
+  title: string;
+  children: React.ReactNode;
+  color?: Color;
+}) {
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor={color} paddingX={1} paddingY={0}>
+      <Text bold color={color}>
+        {title}
+      </Text>
+      {children}
+    </Box>
+  );
+}
+
+function Badge({ label, color }: { label: string; color: Color }) {
+  return (
+    <Text color={color} bold>
+      [{label}]
+    </Text>
+  );
+}
+
+function KeyHint({ keyName, label }: { keyName: string; label: string }) {
+  return (
+    <Text>
+      <Text color={ACCENT} bold>
+        {keyName}
+      </Text>
+      <Text dimColor> {label}</Text>
+    </Text>
+  );
+}
+
+function Navigation() {
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Box gap={2} flexWrap="wrap">
+        <KeyHint keyName="Enter" label="details" />
+        <KeyHint keyName="N" label="new" />
+        <KeyHint keyName="E" label="edit" />
+        <KeyHint keyName="D" label="delete" />
+        <KeyHint keyName="Q" label="QasMixer" />
+      </Box>
+      <Box gap={2} flexWrap="wrap">
+        <KeyHint keyName="R" label="refresh" />
+        <KeyHint keyName="I" label="diagnostics" />
+        <KeyHint keyName="?" label="help" />
+        <KeyHint keyName="X" label="exit" />
+      </Box>
+    </Box>
+  );
+}
+
 function List({
   profiles,
   selection,
@@ -137,89 +250,237 @@ function List({
   devices: Device[];
 }) {
   return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold>Interfaces</Text>
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold color="white">
+          OUTPUT PROFILES
+        </Text>
+        <Text dimColor>
+          {' '}
+          {profiles.length} managed interface{profiles.length === 1 ? '' : 's'}
+        </Text>
+      </Box>
       {profiles.length === 0 ? (
-        <Text dimColor>No managed interfaces. Press N to create one.</Text>
+        <Panel title="NO PROFILES YET" color="magenta">
+          <Box flexDirection="column" paddingY={1}>
+            <Text color="white">Create a profile to expose an equalized ALSA output.</Text>
+            <Text dimColor>Press N to select a physical playback device.</Text>
+          </Box>
+        </Panel>
       ) : (
-        profiles.map((p, index) =>
-          (() => {
-            const device = devices.find((d) => d.target === p.target);
-            const state = states[p.id];
-            const status = device && state?.state === 'Unavailable' ? 'Connected' : state?.state;
-            const audioDetails =
-              state?.rate && state.format ? `${state.rate} ${state.format}` : 'Audio not playing';
+        <Box flexDirection="column" gap={1}>
+          {profiles.map((profile, index) => {
+            const device = devices.find((candidate) => candidate.target === profile.target);
+            const state = states[profile.id];
+            const status = statusLabel(state, device);
             return (
-              <Text key={p.id} color={index === selection ? 'cyan' : undefined}>
-                {index === selection ? '>' : ' '} {p.enabled ? 'o' : 'off'} {p.pcmName.padEnd(18)}{' '}
-                <Text color={statusColor(state?.state, status ?? 'Not found')}>
-                  {(status ?? 'Not found').padEnd(11)}
-                </Text>{' '}
-                {audioDetails} {'->'} {device?.cardName ?? p.target}
-              </Text>
+              <ProfileRow
+                key={profile.id}
+                profile={profile}
+                state={state}
+                device={device}
+                status={status}
+                selected={index === selection}
+              />
             );
-          })(),
-        )
+          })}
+        </Box>
       )}
     </Box>
   );
 }
-function Details({ profile, state }: { profile: Profile; state?: PlaybackState }) {
+
+function ProfileRow({
+  profile,
+  state,
+  device,
+  status,
+  selected,
+}: {
+  profile: Profile;
+  state?: PlaybackState;
+  device?: Device;
+  status: string;
+  selected: boolean;
+}) {
+  const audioDetails = state?.rate && state.format ? `${state.rate} ${state.format}` : 'idle';
   return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold>{profile.displayName}</Text>
-      <Text>Public PCM: {profile.pcmName}</Text>
-      <Text>CTL: {profile.ctlName}</Text>
-      <Text>Target: {profile.target}</Text>
-      <Text>Controls: {profile.controlsPath}</Text>
-      <Text>
-        Status: <Text color={statusColor(state?.state)}>{state?.state ?? 'Unavailable'}</Text>
-      </Text>
-      <Text>
-        Physical: {state?.rate ?? '-'} {state?.format ?? '-'}{' '}
-        {state?.channels ? `${state.channels} ch` : ''}
-      </Text>
-      <Text>Bit-perfect: No - DSP/alsaequal enabled</Text>
-      <Text>Native sample rate: Unknown</Text>
-      <Text dimColor>[Esc] Back</Text>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={selected ? ACCENT : 'gray'}
+      paddingX={1}
+    >
+      <Box justifyContent="space-between">
+        <Box>
+          <Text color={selected ? ACCENT : 'gray'} bold>
+            {selected ? '> ' : '  '}
+          </Text>
+          <Text bold color={selected ? 'white' : undefined}>
+            {profile.displayName}
+          </Text>
+          <Text dimColor> {profile.pcmName}</Text>
+        </Box>
+        <Box>
+          {!profile.enabled && <Badge label="OFF" color="gray" />}
+          <Text> </Text>
+          <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />
+        </Box>
+      </Box>
+      <Box marginLeft={2}>
+        <Text color="magenta">audio</Text>
+        <Text> {audioDetails}</Text>
+        <Text dimColor>
+          {' '}
+          {'->'} {device?.cardName ?? profile.target}
+        </Text>
+      </Box>
     </Box>
   );
 }
+
+function Details({ profile, state }: { profile: Profile; state?: PlaybackState }) {
+  const color = statusColor(state?.state);
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title={profile.displayName} color={ACCENT}>
+        <Box flexDirection="column" paddingY={1}>
+          <InfoRow label="Status" value={state?.state ?? 'Unavailable'} valueColor={color} />
+          <InfoRow label="Public PCM" value={profile.pcmName} />
+          <InfoRow label="CTL" value={profile.ctlName} />
+          <InfoRow label="Target" value={profile.target} />
+        </Box>
+      </Panel>
+      <Panel title="PLAYBACK" color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          <InfoRow label="Physical" value={`${state?.rate ?? '-'} ${state?.format ?? '-'}`} />
+          <InfoRow label="Channels" value={state?.channels ? `${state.channels} ch` : '-'} />
+          <InfoRow label="Bit-perfect" value="No - DSP/alsaequal enabled" valueColor="yellow" />
+          <InfoRow label="Native rate" value="Unknown" valueColor="yellow" />
+        </Box>
+      </Panel>
+      <Panel title="PERSISTENCE" color="gray">
+        <Box flexDirection="column" paddingY={1}>
+          <InfoRow label="Controls" value={profile.controlsPath} />
+          <Text dimColor>Changes to a target affect new ALSA connections only.</Text>
+        </Box>
+      </Panel>
+    </Box>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  valueColor?: Color;
+}) {
+  return (
+    <Box>
+      <Text color="gray">{label.padEnd(14)}</Text>
+      <Text color={valueColor}>{value}</Text>
+    </Box>
+  );
+}
+
 function Help() {
   return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold>Keyboard</Text>
-      <Text>
-        Arrows/j/k select, Enter details, N new, E edit, D delete, Q QasMixer, R refresh, I
-        diagnostics, X exit.
-      </Text>
-      <Text>All changes are explicit; no ALSA configuration is written on startup.</Text>
-      <Text dimColor>[Esc] Back</Text>
-    </Box>
-  );
-}
-function Diagnostics({ report }: { report: DependencyReport }) {
-  return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold>Diagnostics</Text>
-      {report.dependencies.map((d) => (
-        <Text key={d.name} color={d.ok ? 'green' : 'red'}>
-          {d.ok ? 'OK ' : 'FAIL'} {d.name}: {d.detail || d.purpose}
+    <Panel title="KEYBOARD" color={ACCENT}>
+      <Box flexDirection="column" paddingY={1} gap={1}>
+        <Text>
+          <Text color={ACCENT} bold>
+            Arrows / j / k
+          </Text>{' '}
+          select profiles
         </Text>
-      ))}
-      <Text>LADSPA_PATH: {report.ladspaPath}</Text>
-      {report.dependencies.some((d) => !d.ok) && (
-        <>
-          <Text color="yellow">Suggested installation:</Text>
-          {report.installCommands.map((command) => (
-            <Text key={command}>{command}</Text>
+        <Text>
+          <Text color={ACCENT} bold>
+            Enter
+          </Text>{' '}
+          open details{' '}
+          <Text color={ACCENT} bold>
+            N
+          </Text>{' '}
+          new{' '}
+          <Text color={ACCENT} bold>
+            E
+          </Text>{' '}
+          edit
+        </Text>
+        <Text>
+          <Text color={ACCENT} bold>
+            D
+          </Text>{' '}
+          delete{' '}
+          <Text color={ACCENT} bold>
+            Q
+          </Text>{' '}
+          QasMixer{' '}
+          <Text color={ACCENT} bold>
+            R
+          </Text>{' '}
+          refresh
+        </Text>
+        <Text>
+          <Text color={ACCENT} bold>
+            I
+          </Text>{' '}
+          diagnostics{' '}
+          <Text color={ACCENT} bold>
+            X
+          </Text>{' '}
+          exit
+        </Text>
+        <Text dimColor>
+          All changes are explicit. ALSA configuration is never written on startup.
+        </Text>
+      </Box>
+    </Panel>
+  );
+}
+
+function Diagnostics({ report }: { report: DependencyReport }) {
+  const healthy = report.dependencies.every((dependency) => dependency.ok);
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel
+        title={healthy ? 'SYSTEM DIAGNOSTICS' : 'ACTION REQUIRED'}
+        color={healthy ? 'green' : 'yellow'}
+      >
+        <Box flexDirection="column" paddingY={1}>
+          {report.dependencies.map((dependency) => (
+            <Box key={dependency.name}>
+              <Text color={dependency.ok ? 'green' : 'red'} bold>
+                {dependency.ok ? '[OK]  ' : '[FAIL]'}
+              </Text>
+              <Text bold>{dependency.name.padEnd(14)}</Text>
+              <Text dimColor> {dependency.detail || dependency.purpose}</Text>
+            </Box>
           ))}
-        </>
+          <Box marginTop={1}>
+            <Text color="gray">LADSPA_PATH </Text>
+            <Text>{report.ladspaPath}</Text>
+          </Box>
+        </Box>
+      </Panel>
+      {report.dependencies.some((dependency) => !dependency.ok) && (
+        <Panel title="SUGGESTED INSTALLATION" color="yellow">
+          <Box flexDirection="column" paddingY={1}>
+            {report.installCommands.map((command) => (
+              <Text key={command} color="yellow">
+                $ {command}
+              </Text>
+            ))}
+          </Box>
+        </Panel>
       )}
-      <Text dimColor>[Esc] Back</Text>
     </Box>
   );
 }
+
 function NewProfile({
   service,
   devices,
@@ -242,23 +503,39 @@ function NewProfile({
   const [field, setField] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [error, setError] = useState('');
+
   useInput((input, key) => {
     const value = field === 0 ? id : displayName;
     const setValue = field === 0 ? setId : setDisplayName;
+    const isTextField = field < 2;
+    const isBackspace = key.backspace || input === '\b' || input === '\x7f';
+    const isDelete = key.delete || input === '\x1b[3~';
+
     if (key.tab) {
       const nextField = (field + 1) % 4;
       setField(nextField);
       setCursor(nextField === 0 ? id.length : nextField === 1 ? displayName.length : 0);
-    } else if (key.leftArrow && field < 2) {
+    } else if (key.ctrl && input === 'a' && isTextField) {
+      setCursor(0);
+    } else if (key.ctrl && input === 'e' && isTextField) {
+      setCursor(value.length);
+    } else if (key.ctrl && input === 'u' && isTextField) {
+      setValue('');
+      setCursor(0);
+    } else if (key.leftArrow && isTextField) {
       setCursor((position) => Math.max(0, position - 1));
-    } else if (key.rightArrow && field < 2) {
+    } else if (key.rightArrow && isTextField) {
       setCursor((position) => Math.min(value.length, position + 1));
-    } else if (key.backspace && field < 2) {
+    } else if (key.home && isTextField) {
+      setCursor(0);
+    } else if (key.end && isTextField) {
+      setCursor(value.length);
+    } else if (isBackspace && isTextField) {
       if (cursor > 0) {
         setValue((current) => current.slice(0, cursor - 1) + current.slice(cursor));
         setCursor((position) => position - 1);
       }
-    } else if (key.delete && field < 2) {
+    } else if (isDelete && isTextField) {
       setValue((current) => current.slice(0, cursor) + current.slice(cursor + 1));
     } else if (key.upArrow || (field === 2 && input === 'k')) {
       setDevice((current) => Math.max(0, current - 1));
@@ -300,11 +577,11 @@ function NewProfile({
           await service.applyConfig(config);
           await service.store.save(config);
           onDone();
-        } catch (e) {
-          setError(e instanceof Error ? e.message : String(e));
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
         }
       })();
-    } else if (input && !key.ctrl && !key.meta && field < 2) {
+    } else if (input && !key.ctrl && !key.meta && isTextField) {
       const valid = field === 0 ? /^[A-Za-z0-9_-]+$/.test(input) : !/[\r\n]/.test(input);
       if (valid) {
         setValue((current) => current.slice(0, cursor) + input + current.slice(cursor));
@@ -312,38 +589,68 @@ function NewProfile({
       }
     }
   });
+
   const renderInput = (label: string, value: string, active: boolean) => (
-    <Text color={active ? 'cyan' : undefined}>
-      {active ? '>' : ' '} {label}: {value.slice(0, active ? cursor : value.length)}
-      {active ? '_' : ''}
-      {value.slice(active ? cursor : value.length)}
-    </Text>
-  );
-  return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold>{existing ? `Edit ${existing.displayName}` : 'New interface'}</Text>
-      {renderInput('Identifier', id, field === 0)}
-      {renderInput('Visible name', displayName, field === 1)}
-      <Text color={field === 2 ? 'cyan' : undefined}>
-        {field === 2 ? '>' : ' '} Target: {devices[device]?.target ?? 'No playback hardware'}
+    <Box>
+      <Text color={active ? ACCENT : 'gray'} bold>
+        {active ? '> ' : '  '}
       </Text>
-      <Box flexDirection="column" marginLeft={2} marginTop={1}>
-        <Text bold>Available playback devices</Text>
-        {devices.map((candidate, index) => (
-          <Text key={candidate.target} color={index === device ? 'cyan' : undefined}>
-            {index === device ? '>' : ' '} Card {candidate.cardId} ({candidate.cardIndex}), DEV=
-            {candidate.device}: {candidate.cardName} - {candidate.description}
+      <Text color={active ? 'white' : undefined}>{label.padEnd(15)}</Text>
+      {active ? (
+        <Text color="white">
+          {value.slice(0, cursor)}
+          <Text inverse color={ACCENT_BRIGHT}>
+            {value[cursor] ?? ' '}
           </Text>
-        ))}
+          {value.slice(cursor + 1)}
+        </Text>
+      ) : (
+        <Text>{value}</Text>
+      )}
+    </Box>
+  );
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title={existing ? `EDIT ${existing.displayName.toUpperCase()}` : 'NEW OUTPUT PROFILE'}>
+        <Box flexDirection="column" paddingY={1}>
+          {renderInput('Identifier', id, field === 0)}
+          {renderInput('Visible name', displayName, field === 1)}
+          <Box>
+            <Text color={field === 2 ? ACCENT : 'gray'} bold>
+              {field === 2 ? '> ' : '  '}
+            </Text>
+            <Text color={field === 2 ? 'white' : undefined}>{'Target'.padEnd(15)}</Text>
+            <Text>{devices[device]?.target ?? 'No playback hardware'}</Text>
+          </Box>
+        </Box>
+      </Panel>
+      <Panel title="PLAYBACK DEVICES" color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          {devices.length === 0 ? (
+            <Text color="yellow">No playback hardware detected.</Text>
+          ) : (
+            devices.map((candidate, index) => (
+              <Text key={candidate.target}>
+                <Text color={index === device ? 'magenta' : 'gray'} bold>
+                  {index === device ? '> ' : '  '}
+                </Text>
+                <Text color={index === device ? 'white' : undefined}>
+                  {candidate.cardName} <Text dimColor>{candidate.description}</Text>
+                </Text>
+              </Text>
+            ))
+          )}
+        </Box>
+      </Panel>
+      <Box borderStyle="round" borderColor={field === 3 ? 'green' : 'gray'} paddingX={1}>
+        <Text color={field === 3 ? 'green' : 'gray'} bold>
+          {field === 3 ? '> ' : '  '}
+        </Text>
+        <Text color={field === 3 ? 'green' : undefined}>[ Save profile ]</Text>
       </Box>
-      <Text color={field === 3 ? 'green' : undefined}>
-        {field === 3 ? '>' : ' '} [Create interface]
-      </Text>
-      <Text dimColor>
-        Tab or Enter advances. Up/Down chooses target. Select Create interface and press Enter to
-        save.
-      </Text>
-      {error && <Text color="red">{error}</Text>}
+      <Text dimColor>Tab/Enter advances Up/Down chooses target Esc cancels</Text>
+      {error && <Notice message={error} />}
     </Box>
   );
 }
@@ -374,25 +681,36 @@ function DeleteProfile({
             ? `Removed ${profile.pcmName} and its controls file`
             : `Removed ${profile.pcmName}; controls file kept`,
         );
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
       }
     })();
   };
+
   useInput((input) => {
     if (input === 'k') remove(false);
     if (input === 'x') remove(true);
   });
+
   return (
-    <Box flexDirection="column" marginY={1}>
-      <Text bold color="red">
-        Delete {profile.displayName}?
-      </Text>
-      <Text>This removes only the managed definition for {profile.pcmName}.</Text>
-      <Text>[K] Remove interface, keep controls: {profile.controlsPath}</Text>
-      <Text>[X] Remove interface and delete controls file</Text>
-      <Text dimColor>[Esc] Cancel</Text>
-      {error && <Text color="red">{error}</Text>}
-    </Box>
+    <Panel title={`REMOVE ${profile.displayName.toUpperCase()}?`} color="red">
+      <Box flexDirection="column" paddingY={1} gap={1}>
+        <Text>This removes only the managed definition for {profile.pcmName}.</Text>
+        <Text>
+          <Text color="yellow" bold>
+            K
+          </Text>{' '}
+          remove interface, keep controls
+        </Text>
+        <Text>
+          <Text color="red" bold>
+            X
+          </Text>{' '}
+          remove interface and delete controls file
+        </Text>
+        <Text dimColor>Esc cancel</Text>
+        {error && <Text color="red">! {error}</Text>}
+      </Box>
+    </Panel>
   );
 }
