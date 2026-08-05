@@ -1,4 +1,4 @@
-# alsatools
+# alsa-virtual-tools
 
 Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal` virtual PCMs. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSATOOLS` managed block, after an explicit create/apply action.
 
@@ -6,7 +6,7 @@ Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal`
 
 ```bash
 sudo pacman -S nodejs pnpm alsa-utils caps qastools
-# use an AUR helper you already trust; do not run this from alsatools automatically
+# use an AUR helper you already trust; do not run this from alsa-virtual-tools automatically
 paru -S alsaequal
 pnpm install
 pnpm build
@@ -39,14 +39,14 @@ On hosts where pnpm blocks `esbuild` build scripts, approve `esbuild` through th
 ## CLI
 
 ```bash
-alsatools                 # fullscreen TUI
-alsatools doctor
-alsatools list
-alsatools status dac_eq
-alsatools validate
-alsatools repair
-alsatools print-config
-alsatools qasmixer dac_eq
+alsa-virtual-tools                 # fullscreen TUI
+alsa-virtual-tools doctor
+alsa-virtual-tools list
+alsa-virtual-tools status dac_eq
+alsa-virtual-tools validate
+alsa-virtual-tools repair
+alsa-virtual-tools print-config
+alsa-virtual-tools qasmixer dac_eq
 ```
 
 ## Generated configuration

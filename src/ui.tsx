@@ -372,7 +372,7 @@ function DeleteProfile({
       <Text bold color="red">
         Delete {profile.displayName}?
       </Text>
-      <Text>This removes only the alsatools definition for {profile.pcmName}.</Text>
+      <Text>This removes only the managed definition for {profile.pcmName}.</Text>
       <Text>[K] Remove interface, keep controls: {profile.controlsPath}</Text>
       <Text>[X] Remove interface and delete controls file</Text>
       <Text dimColor>[Esc] Cancel</Text>

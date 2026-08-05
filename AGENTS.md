@@ -1,8 +1,8 @@
-# alsatools Contributor Notes
+# alsa-virtual-tools Contributor Notes
 
 ## Purpose
 
-`alsatools` is a Linux TUI/CLI for managing `alsaequal` virtual ALSA PCMs. It owns only:
+`alsa-virtual-tools` is a Linux TUI/CLI for managing `alsaequal` virtual ALSA PCMs. It owns only:
 
 - `~/.config/alsatools/`
 - the marked `ALSATOOLS` block in `~/.asoundrc`
@@ -47,7 +47,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 
 - Supported dependencies are `alsa-utils`, `caps`, `alsaequal`, and `qastools`/QasMixer.
 - A generated public PCM must be visible through `aplay -L` and its corresponding CTL must validate through `amixer`.
-- Sone support lives in `/opt/sone`, not this repository. Its `access-alsa-devices` branch enumerates ALSA PCM hints so it can list public alsatools PCMs.
+- Sone support lives in `/opt/sone`, not this repository. Its `access-alsa-devices` branch enumerates ALSA PCM hints so it can list public virtual PCMs.
 
 ## Testing Constraints
 

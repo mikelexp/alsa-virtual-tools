@@ -60,7 +60,7 @@ export async function checkDependencies(
   const dependencies: Dependency[] = [
     {
       name: 'Node.js >= 22',
-      purpose: 'Run alsatools',
+      purpose: 'Run alsa-virtual-tools',
       ok: nodeCompatible,
       detail: process.versions.node,
     },

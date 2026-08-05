@@ -45,7 +45,7 @@ export class Store {
   async assertControlsPath(file: string): Promise<void> {
     const relative = path.relative(this.paths.controlsDir, file);
     if (relative.startsWith('..') || path.isAbsolute(relative))
-      throw new Error('Controls file must stay in alsatools controls directory');
+      throw new Error('Controls file must stay in the managed controls directory');
     try {
       if ((await lstat(file)).isSymbolicLink())
         throw new Error('Controls file cannot be a symlink');

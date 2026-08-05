@@ -77,6 +77,6 @@ async function main(): Promise<void> {
   throw new Error(`Unknown command: ${command}`);
 }
 main().catch((error: unknown) => {
-  console.error(`alsatools: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`alsa-virtual-tools: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
