@@ -22,18 +22,21 @@ export class AlsatoolsService {
     const config = await this.store.load();
     return Promise.all(
       config.profiles
-        .filter((p) => p.enabled)
+        .filter((p) => p.enabled && p.eqEnabled !== false)
         .map(async (p) => ({ name: p.id, ok: await this.validateProfile(p) })),
     );
   }
   async applyConfig(config?: Config): Promise<void> {
     const effectiveConfig = config ?? (await this.store.load());
     const report = await checkDependencies(this.runner);
-    if (!report.capsPath) throw new Error('caps.so is unavailable');
-    await this.store.applyAsoundrc(effectiveConfig, report.capsPath, async () =>
+    const needsEq = effectiveConfig.profiles.some((p) => p.enabled && p.eqEnabled !== false);
+    if (needsEq && !report.capsPath) throw new Error('caps.so is unavailable');
+    await this.store.applyAsoundrc(effectiveConfig, report.capsPath ?? '', async () =>
       (
         await Promise.all(
-          effectiveConfig.profiles.filter((p) => p.enabled).map((p) => this.validateProfile(p)),
+          effectiveConfig.profiles
+            .filter((p) => p.enabled && p.eqEnabled !== false)
+            .map((p) => this.validateProfile(p)),
         )
       ).every(Boolean),
     );
@@ -41,10 +44,20 @@ export class AlsatoolsService {
   async list() {
     return (await this.store.load()).profiles;
   }
+  async setEqEnabled(profileId: string, eqEnabled: boolean): Promise<void> {
+    const config = await this.store.load();
+    const profile = config.profiles.find((candidate) => candidate.id === profileId);
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`);
+    profile.eqEnabled = eqEnabled;
+    profile.updatedAt = new Date().toISOString();
+    await this.applyConfig(config);
+    await this.store.save(config);
+  }
   async devices() {
     return discoverDevices(this.runner);
   }
   async qasmixer(profile: Profile): Promise<void> {
+    if (profile.eqEnabled === false) throw new Error('EQ is disabled for this profile');
     if (!(await this.validateProfile(profile)))
       throw new Error(`CTL ${profile.ctlName} does not validate; QasMixer was not opened`);
     // QasMixer is single-instance by default; replace any stale instance so the
@@ -79,6 +92,7 @@ export class AlsatoolsService {
       ctlName: id,
       controlsPath: path.join(this.paths.controlsDir, `${id}.bin`),
       enabled: true,
+      eqEnabled: true,
       createdAt: now,
       updatedAt: now,
     };

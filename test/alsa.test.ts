@@ -3,14 +3,14 @@ import { parseAplayList, parseCards, parseHwParams, parseStatus } from '../src/a
 describe('ALSA parsers', () => {
   it('parses playback hardware without capture entries', () => {
     const devices = parseAplayList(
-      '**** List of PLAYBACK Hardware Devices ****\ncard 4: Q1 [FiiO Q1], device 0: USB Audio [USB Audio]\n',
+      '**** List of PLAYBACK Hardware Devices ****\ncard 4: TEST_DAC [Test DAC], device 0: USB Audio [USB Audio]\n',
     );
-    expect(devices).toMatchObject([{ cardId: 'Q1', target: 'plughw:CARD=Q1,DEV=0' }]);
+    expect(devices).toMatchObject([{ cardId: 'TEST_DAC', target: 'plughw:CARD=TEST_DAC,DEV=0' }]);
   });
   it('parses card ids and runtime state', () => {
-    expect(parseCards(' 4 [Q1 ]: USB-Audio - FiiO Q1\n').get(4)).toEqual({
-      id: 'Q1',
-      name: 'USB-Audio - FiiO Q1',
+    expect(parseCards(' 4 [TEST_DAC ]: USB-Audio - Test DAC\n').get(4)).toEqual({
+      id: 'TEST_DAC',
+      name: 'USB-Audio - Test DAC',
     });
     expect(parseStatus('state: RUNNING\n')).toBe('Playing');
     expect(parseStatus('state: XRUN\n')).toBe('XRUN');

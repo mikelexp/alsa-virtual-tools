@@ -45,11 +45,10 @@ async function main(): Promise<void> {
   }
   if (command === 'print-config') {
     const report = await checkDependencies(systemRunner);
-    if (!report.capsPath) throw new Error('caps.so not found');
     console.log(
       renderBlock(
         (await service.list()).filter((p) => p.enabled),
-        report.capsPath,
+        report.capsPath ?? '',
       ),
     );
     return;
