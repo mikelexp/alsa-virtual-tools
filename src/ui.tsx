@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { StatusMessage } from '@inkjs/ui';
 import type { Device, PlaybackState } from './alsa.js';
 import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
@@ -7,10 +8,28 @@ import type { Profile } from './model.js';
 import type { AlsatoolsService } from './service.js';
 
 type Screen = 'list' | 'detail' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
-type Color = 'green' | 'yellow' | 'red' | 'gray' | 'magenta' | 'white' | '#315BEF' | '#6f8fff';
+type Color =
+  | 'green'
+  | 'yellow'
+  | 'red'
+  | 'gray'
+  | 'magenta'
+  | 'white'
+  | '#315BEF'
+  | '#6f8fff'
+  | '#171a21'
+  | '#252a33'
+  | '#2d3850'
+  | '#203b2c'
+  | '#d7dce5'
+  | '#8f98a8';
 
 const ACCENT: Color = '#315BEF';
 const ACCENT_BRIGHT: Color = '#6f8fff';
+const SURFACE: Color = '#252a33';
+const SURFACE_DEEP: Color = '#171a21';
+const TEXT: Color = '#d7dce5';
+const MUTED: Color = '#8f98a8';
 
 const statusColor = (state: PlaybackState['state'] | undefined, label?: string): Color =>
   label === 'Connected'
@@ -42,7 +61,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
   const [devices, setDevices] = useState<Device[]>([]);
   const [selection, setSelection] = useState(0);
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
-  const [notice, setNotice] = useState('');
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
 
   const refresh = async () => {
     const [nextProfiles, nextDevices] = await Promise.all([service.list(), service.devices()]);
@@ -77,6 +96,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
+    if (feedback) return;
     if (screen === 'list') {
       if (input === 'x') exit();
       if (key.downArrow || input === 'j')
@@ -92,8 +112,12 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       if (input === 'q' && profiles[selection])
         void service
           .qasmixer(profiles[selection])
-          .then(() => setNotice('QasMixer launched'))
-          .catch((error: Error) => setNotice(error.message));
+          .then(() =>
+            setFeedback({ variant: 'success', title: 'QASMIXER', message: 'QasMixer launched.' }),
+          )
+          .catch((error: Error) =>
+            setFeedback({ variant: 'error', title: 'QASMIXER FAILED', message: error.message }),
+          );
     } else if (key.escape) setScreen('list');
   });
 
@@ -103,13 +127,12 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       flexDirection="column"
       width={terminalSize.width}
       minHeight={terminalSize.height}
-      borderStyle="round"
-      borderColor={ACCENT}
+      position="relative"
+      backgroundColor={SURFACE_DEEP}
       paddingX={1}
       paddingY={1}
     >
       <Header report={report} />
-      {notice ? <Notice message={notice} /> : null}
       {screen === 'list' && (
         <List profiles={profiles} selection={selection} states={states} devices={devices} />
       )}
@@ -120,7 +143,8 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         <NewProfile
           service={service}
           devices={devices}
-          onDone={() => {
+          onDone={(message) => {
+            setFeedback({ variant: 'success', title: 'PROFILE CREATED', message });
             setScreen('list');
             void refresh();
           }}
@@ -131,8 +155,8 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           service={service}
           devices={devices}
           existing={profile}
-          onDone={() => {
-            setNotice('Target changed. Restart playback to reopen the virtual PCM.');
+          onDone={(message) => {
+            setFeedback({ variant: 'success', title: 'PROFILE UPDATED', message });
             setScreen('list');
             void refresh();
           }}
@@ -143,14 +167,58 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           service={service}
           profile={profile}
           onDone={(message) => {
-            setNotice(message);
+            setFeedback({ variant: 'success', title: 'PROFILE REMOVED', message });
             setScreen('list');
             void refresh();
           }}
         />
       )}
       <Box flexGrow={1} />
-      {screen === 'list' ? <Navigation /> : <Text dimColor>Esc back</Text>}
+      {screen === 'list' ? <Navigation /> : <Text color={MUTED}>Esc back</Text>}
+      {feedback && (
+        <FeedbackModal
+          feedback={feedback}
+          onClose={() => setFeedback(null)}
+          width={Math.max(1, Math.min(58, terminalSize.width - 6))}
+        />
+      )}
+    </Box>
+  );
+}
+
+type FeedbackVariant = 'info' | 'success' | 'error' | 'warning';
+type FeedbackState = { variant: FeedbackVariant; title: string; message: string };
+
+function FeedbackModal({
+  feedback,
+  onClose,
+  width,
+}: {
+  feedback: FeedbackState;
+  onClose: () => void;
+  width: number;
+}) {
+  useInput(() => onClose());
+
+  return (
+    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
+      <Box
+        width={width}
+        flexDirection="column"
+        paddingX={2}
+        paddingY={1}
+        backgroundColor={SURFACE}
+        borderStyle="bold"
+        borderLeft
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderColor={feedback.variant === 'error' ? 'red' : ACCENT}
+      >
+        <StatusMessage variant={feedback.variant}>{feedback.title}</StatusMessage>
+        <Text color={TEXT}>{feedback.message}</Text>
+        <Text color={MUTED}>Press any key to continue</Text>
+      </Box>
     </Box>
   );
 }
@@ -167,15 +235,7 @@ function Header({ report }: { report: DependencyReport }) {
           {healthy ? '[ SYSTEM READY ]' : '[ CHECK REQUIRED ]'}
         </Text>
       </Box>
-      <Text dimColor>safe alsaequal profile manager / live hardware monitor</Text>
-    </Box>
-  );
-}
-
-function Notice({ message }: { message: string }) {
-  return (
-    <Box borderStyle="round" borderColor="yellow" paddingX={1} marginBottom={1}>
-      <Text color="yellow">! {message}</Text>
+      <Text color={MUTED}>safe alsaequal profile manager / live hardware monitor</Text>
     </Box>
   );
 }
@@ -190,7 +250,18 @@ function Panel({
   color?: Color;
 }) {
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={color} paddingX={1} paddingY={0}>
+    <Box
+      flexDirection="column"
+      backgroundColor={SURFACE}
+      borderStyle="bold"
+      borderLeft
+      borderTop={false}
+      borderRight={false}
+      borderBottom={false}
+      borderColor={color}
+      paddingX={2}
+      paddingY={1}
+    >
       <Text bold color={color}>
         {title}
       </Text>
@@ -213,15 +284,15 @@ function KeyHint({ keyName, label }: { keyName: string; label: string }) {
       <Text color={ACCENT} bold>
         {keyName}
       </Text>
-      <Text dimColor> {label}</Text>
+      <Text color={MUTED}> {label}</Text>
     </Text>
   );
 }
 
 function Navigation() {
   return (
-    <Box marginTop={1} flexDirection="column">
-      <Box gap={2} flexWrap="wrap">
+    <>
+      <Box marginTop={1} gap={2} flexWrap="wrap">
         <KeyHint keyName="Enter" label="details" />
         <KeyHint keyName="N" label="new" />
         <KeyHint keyName="E" label="edit" />
@@ -234,7 +305,7 @@ function Navigation() {
         <KeyHint keyName="?" label="help" />
         <KeyHint keyName="X" label="exit" />
       </Box>
-    </Box>
+    </>
   );
 }
 
@@ -255,7 +326,7 @@ function List({
         <Text bold color="white">
           OUTPUT PROFILES
         </Text>
-        <Text dimColor>
+        <Text color={MUTED}>
           {' '}
           {profiles.length} managed interface{profiles.length === 1 ? '' : 's'}
         </Text>
@@ -264,7 +335,7 @@ function List({
         <Panel title="NO PROFILES YET" color="magenta">
           <Box flexDirection="column" paddingY={1}>
             <Text color="white">Create a profile to expose an equalized ALSA output.</Text>
-            <Text dimColor>Press N to select a physical playback device.</Text>
+            <Text color={MUTED}>Press N to select a physical playback device.</Text>
           </Box>
         </Panel>
       ) : (
@@ -307,19 +378,25 @@ function ProfileRow({
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
+      backgroundColor={selected ? '#2d3850' : SURFACE}
+      borderStyle="bold"
+      borderLeft
+      borderTop={false}
+      borderRight={false}
+      borderBottom={false}
       borderColor={selected ? ACCENT : 'gray'}
-      paddingX={1}
+      paddingX={2}
+      paddingY={1}
     >
       <Box justifyContent="space-between">
         <Box>
           <Text color={selected ? ACCENT : 'gray'} bold>
             {selected ? '> ' : '  '}
           </Text>
-          <Text bold color={selected ? 'white' : undefined}>
+          <Text bold color={selected ? 'white' : TEXT}>
             {profile.displayName}
           </Text>
-          <Text dimColor> {profile.pcmName}</Text>
+          <Text color={MUTED}> {profile.pcmName}</Text>
         </Box>
         <Box>
           {!profile.enabled && <Badge label="OFF" color="gray" />}
@@ -330,7 +407,7 @@ function ProfileRow({
       <Box marginLeft={2}>
         <Text color="magenta">audio</Text>
         <Text> {audioDetails}</Text>
-        <Text dimColor>
+        <Text color={MUTED}>
           {' '}
           {'->'} {device?.cardName ?? profile.target}
         </Text>
@@ -362,7 +439,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
       <Panel title="PERSISTENCE" color="gray">
         <Box flexDirection="column" paddingY={1}>
           <InfoRow label="Controls" value={profile.controlsPath} />
-          <Text dimColor>Changes to a target affect new ALSA connections only.</Text>
+          <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
         </Box>
       </Panel>
     </Box>
@@ -380,7 +457,7 @@ function InfoRow({
 }) {
   return (
     <Box>
-      <Text color="gray">{label.padEnd(14)}</Text>
+      <Text color={MUTED}>{label.padEnd(14)}</Text>
       <Text color={valueColor}>{value}</Text>
     </Box>
   );
@@ -434,7 +511,7 @@ function Help() {
           </Text>{' '}
           exit
         </Text>
-        <Text dimColor>
+        <Text color={MUTED}>
           All changes are explicit. ALSA configuration is never written on startup.
         </Text>
       </Box>
@@ -457,7 +534,7 @@ function Diagnostics({ report }: { report: DependencyReport }) {
                 {dependency.ok ? '[OK]  ' : '[FAIL]'}
               </Text>
               <Text bold>{dependency.name.padEnd(14)}</Text>
-              <Text dimColor> {dependency.detail || dependency.purpose}</Text>
+              <Text color={MUTED}> {dependency.detail || dependency.purpose}</Text>
             </Box>
           ))}
           <Box marginTop={1}>
@@ -490,7 +567,7 @@ function NewProfile({
   service: AlsatoolsService;
   devices: Device[];
   existing?: Profile;
-  onDone: () => void;
+  onDone: (message: string) => void;
 }) {
   const [id, setId] = useState(existing?.id ?? '');
   const [displayName, setDisplayName] = useState(existing?.displayName ?? '');
@@ -576,7 +653,11 @@ function NewProfile({
           else config.profiles.push(profile);
           await service.applyConfig(config);
           await service.store.save(config);
-          onDone();
+          onDone(
+            existing
+              ? 'Profile updated. Restart playback to reopen the virtual PCM.'
+              : `Profile ${profile.pcmName} created and ready to use.`,
+          );
         } catch (error) {
           setError(error instanceof Error ? error.message : String(error));
         }
@@ -636,21 +717,31 @@ function NewProfile({
                   {index === device ? '> ' : '  '}
                 </Text>
                 <Text color={index === device ? 'white' : undefined}>
-                  {candidate.cardName} <Text dimColor>{candidate.description}</Text>
+                  {candidate.cardName} <Text color={MUTED}>{candidate.description}</Text>
                 </Text>
               </Text>
             ))
           )}
         </Box>
       </Panel>
-      <Box borderStyle="round" borderColor={field === 3 ? 'green' : 'gray'} paddingX={1}>
+      <Box
+        backgroundColor={field === 3 ? '#203b2c' : SURFACE}
+        borderStyle="bold"
+        borderLeft
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderColor={field === 3 ? 'green' : 'gray'}
+        paddingX={2}
+        paddingY={1}
+      >
         <Text color={field === 3 ? 'green' : 'gray'} bold>
           {field === 3 ? '> ' : '  '}
         </Text>
         <Text color={field === 3 ? 'green' : undefined}>[ Save profile ]</Text>
       </Box>
-      <Text dimColor>Tab/Enter advances Up/Down chooses target Esc cancels</Text>
-      {error && <Notice message={error} />}
+      <Text color={MUTED}>Tab/Enter advances, Up/Down chooses target, Esc cancels</Text>
+      {error && <Text color="red">! {error}</Text>}
     </Box>
   );
 }
@@ -708,7 +799,7 @@ function DeleteProfile({
           </Text>{' '}
           remove interface and delete controls file
         </Text>
-        <Text dimColor>Esc cancel</Text>
+        <Text color={MUTED}>Esc cancel</Text>
         {error && <Text color="red">! {error}</Text>}
       </Box>
     </Panel>
