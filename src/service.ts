@@ -47,6 +47,10 @@ export class AlsatoolsService {
   async qasmixer(profile: Profile): Promise<void> {
     if (!(await this.validateProfile(profile)))
       throw new Error(`CTL ${profile.ctlName} does not validate; QasMixer was not opened`);
+    // QasMixer is single-instance by default; replace any stale instance so the
+    // selected profile is always the one displayed.
+    await this.runner.run('pkill', ['-TERM', '-x', 'qasmixer']);
+    await new Promise((resolve) => setTimeout(resolve, 250));
     const env = {
       ...process.env,
       LADSPA_PATH: process.env.LADSPA_PATH
