@@ -62,6 +62,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
   const [selection, setSelection] = useState(0);
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [eqConfirmation, setEqConfirmation] = useState<Profile | null>(null);
 
   const refresh = async () => {
     const [nextProfiles, nextDevices] = await Promise.all([service.list(), service.devices()]);
@@ -97,6 +98,27 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
     if (feedback) return;
+    if (eqConfirmation) {
+      if (key.escape) setEqConfirmation(null);
+      if (key.return) {
+        const profile = eqConfirmation;
+        setEqConfirmation(null);
+        void service
+          .setEqEnabled(profile.id, profile.eqEnabled === false)
+          .then(() => {
+            setFeedback({
+              variant: 'success',
+              title: profile.eqEnabled === false ? 'EQ ENABLED' : 'EQ BYPASSED',
+              message: 'Restart playback to reopen the virtual PCM in the new mode.',
+            });
+            return refresh();
+          })
+          .catch((error: Error) =>
+            setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
+          );
+      }
+      return;
+    }
     if (screen === 'list') {
       if (input === 'q') exit();
       if (key.downArrow)
@@ -118,6 +140,14 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           .catch((error: Error) =>
             setFeedback({ variant: 'error', title: 'QASMIXER FAILED', message: error.message }),
           );
+      if (input === 'b' && profiles[selection]) {
+        setEqConfirmation(profiles[selection]);
+      }
+    } else if (screen === 'detail') {
+      if (key.escape) setScreen('list');
+      if (input === 'e' && profile) setScreen('edit');
+      if (input === 'b' && profile) setEqConfirmation(profile);
+      if (input === 'd' && profile) setScreen('delete');
     } else if (key.escape) setScreen('list');
   });
 
@@ -175,11 +205,23 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         />
       )}
       <Box flexGrow={1} />
-      {screen === 'list' ? <Navigation /> : <Text color={MUTED}>esc back</Text>}
+      {screen === 'list' ? (
+        <Navigation />
+      ) : screen === 'detail' ? (
+        <DetailNavigation />
+      ) : (
+        <Text color={MUTED}>esc back</Text>
+      )}
       {feedback && (
         <FeedbackModal
           feedback={feedback}
           onClose={() => setFeedback(null)}
+          width={Math.max(1, Math.min(58, terminalSize.width - 6))}
+        />
+      )}
+      {eqConfirmation && (
+        <EqConfirmationModal
+          profile={eqConfirmation}
           width={Math.max(1, Math.min(58, terminalSize.width - 6))}
         />
       )}
@@ -221,6 +263,34 @@ function FeedbackModal({
         <StatusMessage variant={feedback.variant}>{feedback.title}</StatusMessage>
         <Text color={TEXT}>{feedback.message}</Text>
         <Text color={MUTED}>enter to continue, esc to close</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function EqConfirmationModal({ profile, width }: { profile: Profile; width: number }) {
+  const enabling = profile.eqEnabled === false;
+  return (
+    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
+      <Box
+        width={width}
+        flexDirection="column"
+        paddingX={2}
+        paddingY={1}
+        backgroundColor={SURFACE}
+        borderStyle="bold"
+        borderLeft
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderColor={enabling ? 'green' : 'yellow'}
+      >
+        <StatusMessage variant="warning">CONFIRM EQ CHANGE</StatusMessage>
+        <Text color={TEXT}>
+          {enabling ? 'Enable DSP/alsaequal' : 'Disable EQ and use the direct bit-perfect path'} for{' '}
+          {profile.displayName}?
+        </Text>
+        <Text color={MUTED}>enter to confirm, esc to cancel</Text>
       </Box>
     </Box>
   );
@@ -301,6 +371,7 @@ function Navigation() {
         <KeyHint keyName="e" label="edit" />
         <KeyHint keyName="d" label="delete" />
         <KeyHint keyName="m" label="QasMixer" />
+        <KeyHint keyName="b" label="toggle EQ" />
       </Box>
       <Box gap={2} flexWrap="wrap">
         <KeyHint keyName="r" label="refresh" />
@@ -309,6 +380,17 @@ function Navigation() {
         <KeyHint keyName="q" label="exit" />
       </Box>
     </>
+  );
+}
+
+function DetailNavigation() {
+  return (
+    <Box marginTop={1} gap={2} flexWrap="wrap">
+      <KeyHint keyName="e" label="edit interface" />
+      <KeyHint keyName="b" label="toggle EQ" />
+      <KeyHint keyName="d" label="delete interface" />
+      <KeyHint keyName="esc" label="back" />
+    </Box>
   );
 }
 
@@ -403,6 +485,12 @@ function ProfileRow({
         </Box>
         <Box>
           {!profile.enabled && <Badge label="OFF" color="gray" />}
+          {profile.enabled && (
+            <Badge
+              label={profile.eqEnabled === false ? 'BYPASS' : 'EQ'}
+              color={profile.eqEnabled === false ? 'yellow' : 'green'}
+            />
+          )}
           <Text> </Text>
           <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />
         </Box>
@@ -435,7 +523,13 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
         <Box flexDirection="column" paddingY={1}>
           <InfoRow label="Physical" value={`${state?.rate ?? '-'} ${state?.format ?? '-'}`} />
           <InfoRow label="Channels" value={state?.channels ? `${state.channels} ch` : '-'} />
-          <InfoRow label="Bit-perfect" value="No - DSP/alsaequal enabled" valueColor="yellow" />
+          <InfoRow
+            label="Processing"
+            value={
+              profile.eqEnabled === false ? 'Bypass - bit-perfect path' : 'DSP - alsaequal enabled'
+            }
+            valueColor={profile.eqEnabled === false ? 'green' : 'yellow'}
+          />
           <InfoRow label="Native rate" value="Unknown" valueColor="yellow" />
         </Box>
       </Panel>
@@ -443,6 +537,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
         <Box flexDirection="column" paddingY={1}>
           <InfoRow label="Controls" value={profile.controlsPath} />
           <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
+          <Text color={MUTED}>b toggles EQ bypass; restart playback after changing mode.</Text>
         </Box>
       </Panel>
     </Box>
@@ -499,6 +594,10 @@ function Help() {
             m
           </Text>{' '}
           QasMixer{' '}
+          <Text color={ACCENT} bold>
+            b
+          </Text>{' '}
+          toggle EQ{' '}
           <Text color={ACCENT} bold>
             r
           </Text>{' '}

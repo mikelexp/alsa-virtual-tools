@@ -1,6 +1,6 @@
 # alsa-virtual-tools
 
-Keyboard-driven fullscreen TUI and CLI for managing safe, per-device `alsaequal` virtual PCMs. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSA-VIRTUAL-TOOLS` managed block, after an explicit create/apply action.
+Keyboard-driven fullscreen TUI and CLI for managing safe, per-device virtual PCMs with optional `alsaequal` DSP. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSA-VIRTUAL-TOOLS` managed block, after an explicit create/apply action.
 
 ## Install: Arch / CachyOS
 
@@ -83,6 +83,11 @@ alsa-virtual-tools qasmixer dac_eq
 ```
 
 ## Generated configuration
+
+In the TUI, select a profile and press `b` to switch its EQ between DSP and
+bypass. Bypass keeps the public PCM and physical target but removes the
+`alsaequal` PCM/CTL layer, so playback can use the direct bit-perfect path.
+Stop and restart playback after changing the mode.
 
 ```text
 ctl.dac_eq {
