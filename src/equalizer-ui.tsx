@@ -46,6 +46,7 @@ export function EqualizerScreen({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bandsRef = useRef<EqualizerBand[]>([]);
+  const savedBandsRef = useRef<EqualizerBand[]>([]);
   const savingRef = useRef(false);
 
   const load = async () => {
@@ -54,6 +55,7 @@ export function EqualizerScreen({
     try {
       const nextBands = await service.equalizerBands(profile);
       bandsRef.current = nextBands;
+      savedBandsRef.current = nextBands;
       setBands(nextBands);
       setSelection((value) => Math.min(value, Math.max(0, nextBands.length - 1)));
     } catch (loadError) {
@@ -74,28 +76,13 @@ export function EqualizerScreen({
     const value = clampBandValue(band, requestedValue);
     if (value === band.value) return;
 
-    const previousBands = bandsRef.current;
-    const nextBands = previousBands.map((candidate, index) =>
+    const nextBands = bandsRef.current.map((candidate, index) =>
       index === selection
         ? { ...candidate, value, channelValues: candidate.channelValues.map(() => value) }
         : candidate,
     );
     bandsRef.current = nextBands;
     setBands(nextBands);
-    savingRef.current = true;
-    setSaving(true);
-    void service
-      .setEqualizerBand(profile, band, value)
-      .then(() => onBandsChange(nextBands))
-      .catch((saveError: unknown) => {
-        bandsRef.current = previousBands;
-        setBands(previousBands);
-        onError(saveError instanceof Error ? saveError.message : String(saveError));
-      })
-      .finally(() => {
-        savingRef.current = false;
-        setSaving(false);
-      });
   };
 
   const removeEqualizer = () => {
@@ -122,19 +109,29 @@ export function EqualizerScreen({
     if (nextBands.every((band, index) => band.value === previousBands[index]?.value)) return;
     bandsRef.current = nextBands;
     setBands(nextBands);
+  };
+
+  const saveAndBack = () => {
+    if (savingRef.current) return;
+    const savedBands = savedBandsRef.current;
+    const nextBands = bandsRef.current;
+    const changes = nextBands.flatMap((band) => {
+      const savedBand = savedBands.find((candidate) => candidate.control === band.control);
+      return savedBand && savedBand.value !== band.value ? [[savedBand, band.value] as const] : [];
+    });
+    if (changes.length === 0) {
+      onBack();
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
-    void Promise.all(
-      nextBands.map((band, index) => {
-        const previousBand = previousBands[index];
-        if (!previousBand) throw new Error('Equalizer bands changed while resetting');
-        return service.setEqualizerBand(profile, previousBand, band.value);
-      }),
-    )
-      .then(() => onBandsChange(nextBands))
+    void Promise.all(changes.map(([band, value]) => service.setEqualizerBand(profile, band, value)))
+      .then(() => {
+        savedBandsRef.current = nextBands;
+        onBandsChange(nextBands);
+        onBack();
+      })
       .catch((saveError: unknown) => {
-        bandsRef.current = previousBands;
-        setBands(previousBands);
         onError(saveError instanceof Error ? saveError.message : String(saveError));
       })
       .finally(() => {
@@ -146,10 +143,10 @@ export function EqualizerScreen({
   useInput(
     (input, key) => {
       if (key.escape) {
-        onBack();
+        saveAndBack();
         return;
       }
-      if (input === 'r') {
+      if (input === 'r' && error) {
         if (!savingRef.current) void load();
         return;
       }
@@ -185,6 +182,10 @@ export function EqualizerScreen({
     ),
   );
   const verticalRequiredWidth = bands.length * (bandColumnWidth + 1) + 6;
+  const hasChanges = bands.some((band) => {
+    const savedBand = savedBandsRef.current.find((candidate) => candidate.control === band.control);
+    return savedBand?.value !== band.value;
+  });
 
   return (
     <Box
@@ -203,7 +204,9 @@ export function EqualizerScreen({
         <Text bold color={ACCENT}>
           GRAPHIC EQUALIZER{bands.length > 0 ? ` · ${bands.length} BANDS` : ''}
         </Text>
-        <Text color={saving ? 'yellow' : 'green'}>{saving ? '[ SAVING ]' : '[ LIVE ]'}</Text>
+        <Text color={saving ? 'yellow' : hasChanges ? 'yellow' : 'green'}>
+          {saving ? '[ SAVING ]' : hasChanges ? '[ UNSAVED ]' : '[ SAVED ]'}
+        </Text>
       </Box>
       <Text color={MUTED}>
         {profile.displayName} · {profile.ctlName} · linked channels
@@ -237,11 +240,11 @@ export function EqualizerScreen({
             </Text>{' '}
             {formatEqualizerGain(bands[selection])}
           </Text>
-          <Text color={MUTED}>changes apply to the active EQ immediately</Text>
+          <Text color={MUTED}>changes save when leaving this screen</Text>
         </Box>
       )}
       <Text color={MUTED}>
-        ↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · x removes EQ · esc back
+        ↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · x removes EQ · esc save & back
       </Text>
     </Box>
   );
