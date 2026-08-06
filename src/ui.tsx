@@ -848,17 +848,20 @@ function ProfileRow({
       borderColor={selected ? ACCENT : 'gray'}
       paddingX={2}
     >
-      <Box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="center">
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        justifyContent="flex-start"
+        paddingTop={1}
+      >
         <Box>
-          <Text color={selected ? ACCENT : 'gray'} bold>
-            {selected ? '> ' : '  '}
-          </Text>
           <Text bold color={selected ? 'white' : TEXT}>
             {profile.displayName}
           </Text>
           <Text color={MUTED}> {profile.pcmName}</Text>
         </Box>
-        <Box marginLeft={2}>
+        <Box>
           <Text color="magenta">audio</Text>
           <Text> {audioDetails}</Text>
           <Text color={MUTED}>
