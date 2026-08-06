@@ -5,7 +5,7 @@ import type { Device, PlaybackState } from './alsa.js';
 import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
-import { equalizerBarRows, type EqualizerBand } from './equalizer.js';
+import { equalizerBarRows, equalizerCutBarRows, type EqualizerBand } from './equalizer.js';
 import { isBitperfect, type Crossfeed, type CrossfeedPreset, type Profile } from './model.js';
 import type { ALSAChainService } from './service.js';
 
@@ -910,7 +910,9 @@ function ProfileEqualizer({
   selected: boolean;
 }) {
   const graphWidth = Math.max(1, width - 4);
-  const rows = bands ? equalizerBarRows(bands, 4, graphWidth) : [];
+  const boostRows = bands ? equalizerBarRows(bands, 2, graphWidth) : [];
+  const cutRows = bands ? equalizerCutBarRows(bands, 1, graphWidth) : [];
+  const zeroLine = '─'.repeat(graphWidth);
   return (
     <Box
       width={width}
@@ -927,9 +929,26 @@ function ProfileEqualizer({
       <Text bold color={selected ? ACCENT_BRIGHT : ACCENT}>
         EQ{bands ? ` · ${bands.length} bands` : ' · reading CTL'}
       </Text>
-      {rows.map((row, index) => (
+      {boostRows.map((row, index) => (
         <Text key={index} color={selected ? ACCENT_BRIGHT : TEXT} wrap="truncate">
           {row}
+        </Text>
+      ))}
+      {bands && <Text color={selected ? ACCENT : MUTED}>{zeroLine}</Text>}
+      {cutRows.map((row, index) => (
+        <Text key={`cut-${index}`} color={selected ? ACCENT_BRIGHT : TEXT} wrap="truncate">
+          {Array.from(row).map((cell, cellIndex) => {
+            const partial = cell !== '·' && cell !== '█' && cell !== ' ';
+            return (
+              <Text
+                key={cellIndex}
+                color={partial ? SURFACE : undefined}
+                backgroundColor={partial ? (selected ? ACCENT_BRIGHT : TEXT) : undefined}
+              >
+                {cell}
+              </Text>
+            );
+          })}
         </Text>
       ))}
     </Box>

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bandValueForEqualizerGainDb,
   clampBandValue,
   equalizerBarRows,
+  equalizerCutBarRows,
+  equalizerCutVerticalCell,
+  equalizerCutVerticalFill,
+  equalizerGainDb,
   equalizerVerticalCell,
+  flatBandValue,
+  formatEqualizerGain,
   parseEqualizerBands,
 } from '../src/equalizer.js';
 
@@ -54,9 +61,9 @@ describe('equalizer controls', () => {
     expect(clampBandValue(band, 50.6)).toBe(51);
   });
 
-  it('renders a vertical graph using the discovered band count', () => {
+  it('renders boosts and cuts around the discovered Flat point', () => {
     const bands = parseEqualizerBands(amixerOutput);
-    expect(equalizerBarRows(bands, 4, 8)).toEqual(['· ·', '▅ ·', '█ ▅', '█ █']);
+    expect(equalizerBarRows(bands, 4, 8)).toEqual(['· ·', '· ·', '· ·', '▁ ·']);
     const lowBand = bands[0];
     const highBand = bands[1];
     expect(lowBand).toBeDefined();
@@ -65,23 +72,48 @@ describe('equalizer controls', () => {
     expect(
       equalizerBarRows(
         [
-          { ...lowBand, value: 0 },
+          { ...lowBand, value: 66 },
           { ...highBand, value: 100 },
         ],
         2,
         3,
       ),
     ).toEqual(['· █', '· █']);
+    expect(
+      equalizerCutBarRows(
+        [
+          { ...lowBand, value: 0 },
+          { ...highBand, value: 66 },
+        ],
+        2,
+        3,
+      ),
+    ).toEqual(['█ ·', '█ ·']);
   });
 
   it('uses partial-height Unicode blocks for vertical EQ bars', () => {
     const band = parseEqualizerBands(amixerOutput)[0];
     expect(band).toBeDefined();
     if (!band) return;
-    expect(equalizerVerticalCell({ ...band, value: 50 }, 4, 10)).toBe('··');
-    expect(equalizerVerticalCell({ ...band, value: 50 }, 5, 10)).toBe('██');
-    expect(equalizerVerticalCell({ ...band, value: 55 }, 4, 10)).toBe('▄▄');
+    expect(equalizerVerticalCell({ ...band, value: 66 }, 4, 10)).toBe('··');
     expect(equalizerVerticalCell({ ...band, value: 100 }, 0, 10)).toBe('██');
+    expect(equalizerCutVerticalCell({ ...band, value: 0 }, 0, 10)).toBe('██');
+    expect(equalizerCutVerticalCell({ ...band, value: 49 }, 0, 2)).toBe('▄▄');
+    expect(equalizerCutVerticalCell({ ...band, value: 49 }, 1, 2)).toBe('··');
+    expect(equalizerCutVerticalFill({ ...band, value: 49 }, 0, 2)).toBe(4);
+    expect(equalizerCutVerticalCell({ ...band, value: 62 }, 0, 2)).toBe('▇▇');
+  });
+
+  it('labels the Eq10 neutral control as Flat instead of its raw percentage', () => {
+    const band = parseEqualizerBands(amixerOutput)[0];
+    expect(band).toBeDefined();
+    if (!band) return;
+    expect(flatBandValue(band)).toBe(66);
+    expect(formatEqualizerGain({ ...band, value: 66 })).toBe('Flat');
+    expect(formatEqualizerGain({ ...band, value: 80 })).toBe('+9.6 dB');
+    expect(equalizerGainDb({ ...band, value: 50 })).toBe(-12);
+    expect(bandValueForEqualizerGainDb(band, 1)).toBe(68);
+    expect(bandValueForEqualizerGainDb(band, -1)).toBe(65);
   });
 
   it('compresses every configured band when the terminal column is narrower', () => {

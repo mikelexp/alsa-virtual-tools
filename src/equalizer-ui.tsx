@@ -1,7 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { EqualizerBand } from './equalizer.js';
-import { clampBandValue, equalizerVerticalCell } from './equalizer.js';
+import {
+  bandValueForEqualizerGainDb,
+  clampBandValue,
+  equalizerCutVerticalCell,
+  equalizerCutVerticalFill,
+  equalizerGainDb,
+  equalizerVerticalCell,
+  flatBandValue,
+  formatEqualizerGain,
+} from './equalizer.js';
 import type { Profile } from './model.js';
 import type { ALSAChainService } from './service.js';
 
@@ -103,6 +112,37 @@ export function EqualizerScreen({
       });
   };
 
+  const resetEqualizer = () => {
+    if (savingRef.current || bandsRef.current.length === 0) return;
+    const previousBands = bandsRef.current;
+    const nextBands = previousBands.map((band) => {
+      const value = flatBandValue(band);
+      return { ...band, value, channelValues: band.channelValues.map(() => value) };
+    });
+    if (nextBands.every((band, index) => band.value === previousBands[index]?.value)) return;
+    bandsRef.current = nextBands;
+    setBands(nextBands);
+    savingRef.current = true;
+    setSaving(true);
+    void Promise.all(
+      nextBands.map((band, index) => {
+        const previousBand = previousBands[index];
+        if (!previousBand) throw new Error('Equalizer bands changed while resetting');
+        return service.setEqualizerBand(profile, previousBand, band.value);
+      }),
+    )
+      .then(() => onBandsChange(nextBands))
+      .catch((saveError: unknown) => {
+        bandsRef.current = previousBands;
+        setBands(previousBands);
+        onError(saveError instanceof Error ? saveError.message : String(saveError));
+      })
+      .finally(() => {
+        savingRef.current = false;
+        setSaving(false);
+      });
+  };
+
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -117,14 +157,20 @@ export function EqualizerScreen({
         removeEqualizer();
         return;
       }
+      if (input === 'f' && !loading && !savingRef.current) {
+        resetEqualizer();
+        return;
+      }
       if (loading || error || savingRef.current || bands.length === 0) return;
       if (key.leftArrow) setSelection((value) => Math.max(0, value - 1));
       if (key.rightArrow) setSelection((value) => Math.min(bandsRef.current.length - 1, value + 1));
       const band = bandsRef.current[selection];
       if (!band) return;
       const step = key.shift ? 5 : 1;
-      if (key.upArrow) setSelectedValue(band.value + step);
-      if (key.downArrow) setSelectedValue(band.value - step);
+      if (key.upArrow)
+        setSelectedValue(bandValueForEqualizerGainDb(band, equalizerGainDb(band) + step));
+      if (key.downArrow)
+        setSelectedValue(bandValueForEqualizerGainDb(band, equalizerGainDb(band) - step));
       if (key.home) setSelectedValue(band.min);
       if (key.end) setSelectedValue(band.max);
     },
@@ -162,6 +208,7 @@ export function EqualizerScreen({
       <Text color={MUTED}>
         {profile.displayName} · {profile.ctlName} · linked channels
       </Text>
+      <Text color={MUTED}>↑ boost to +24 dB · 0 dB = Flat · ↓ cut to −48 dB</Text>
       {loading ? (
         <Box paddingY={2}>
           <Text color={MUTED}>Reading alsaequal controls...</Text>
@@ -173,10 +220,10 @@ export function EqualizerScreen({
           <Text color={MUTED}>Press r to retry or esc to go back.</Text>
         </Box>
       ) : width >= verticalRequiredWidth ? (
-        <VerticalBands
+        <EqualizerGraph
           bands={bands}
           selection={selection}
-          levels={Math.max(3, Math.min(10, height - 18))}
+          levels={Math.max(2, Math.min(5, Math.floor((height - 20) / 2)))}
           columnWidth={bandColumnWidth}
         />
       ) : (
@@ -188,17 +235,19 @@ export function EqualizerScreen({
             <Text bold color={ACCENT}>
               {bands[selection].label}
             </Text>{' '}
-            {bands[selection].value}/{bands[selection].max}
+            {formatEqualizerGain(bands[selection])}
           </Text>
           <Text color={MUTED}>changes apply to the active EQ immediately</Text>
         </Box>
       )}
-      <Text color={MUTED}>x removes EQ from this profile · esc back</Text>
+      <Text color={MUTED}>
+        ↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · x removes EQ · esc back
+      </Text>
     </Box>
   );
 }
 
-function VerticalBands({
+export function EqualizerGraph({
   bands,
   selection,
   levels,
@@ -224,9 +273,23 @@ function VerticalBands({
                 </Text>
               );
             })}
-            <Text bold={selected} color={selected ? ACCENT : TEXT}>
-              {String(band.value).padStart(2)}
-            </Text>
+            <Text color={selected ? ACCENT : MUTED}>{'──'}</Text>
+            {Array.from({ length: levels }, (_, row) => {
+              const cell = equalizerCutVerticalCell(band, row, levels);
+              const fill = equalizerCutVerticalFill(band, row, levels);
+              const filled = fill > 0;
+              const color = selected ? ACCENT : filled ? TEXT : MUTED;
+              const partial = fill > 0 && fill < 8;
+              return (
+                <Text
+                  key={`cut-${row}`}
+                  color={partial ? SURFACE : color}
+                  backgroundColor={partial ? color : SURFACE}
+                >
+                  {cell}
+                </Text>
+              );
+            })}
             <Text bold={selected} color={selected ? ACCENT : MUTED} wrap="truncate">
               {band.label.replaceAll(' ', '')}
             </Text>
@@ -260,13 +323,21 @@ function HorizontalBands({
     <Box flexDirection="column" paddingTop={1}>
       {visibleBands.map((band, visibleIndex) => {
         const selected = start + visibleIndex === selection;
-        const ratio = (band.value - band.min) / Math.max(1, band.max - band.min);
-        const filled = Math.round(ratio * barWidth);
+        const neutral = flatBandValue(band);
+        const leftWidth = Math.floor(barWidth / 2);
+        const rightWidth = barWidth - leftWidth;
+        const cut = Math.round(
+          (Math.max(0, neutral - band.value) / Math.max(1, neutral - band.min)) * leftWidth,
+        );
+        const boost = Math.round(
+          (Math.max(0, band.value - neutral) / Math.max(1, band.max - neutral)) * rightWidth,
+        );
         return (
           <Text key={band.control} color={selected ? ACCENT : TEXT} bold={selected}>
-            {selected ? '›' : ' '} {band.label.padStart(7)} [{'█'.repeat(filled)}
-            <Text color={MUTED}>{'·'.repeat(barWidth - filled)}</Text>]{' '}
-            {String(band.value).padStart(2)}
+            {selected ? '›' : ' '} {band.label.padStart(7)} [
+            <Text color={MUTED}>{'·'.repeat(leftWidth - cut)}</Text>
+            {'█'.repeat(cut)}|{'█'.repeat(boost)}
+            <Text color={MUTED}>{'·'.repeat(rightWidth - boost)}</Text>] {formatEqualizerGain(band)}
           </Text>
         );
       })}
