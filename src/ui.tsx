@@ -46,10 +46,11 @@ const statusColor = (state: PlaybackState['state'] | undefined, label?: string):
 
 const statusLabel = (state: PlaybackState | undefined, device?: Device) => {
   if (device && state?.state === 'Unavailable') return 'Connected';
+  if (state?.state === 'Unknown' || (device && !state)) return undefined;
   return state?.state ?? 'Not found';
 };
 
-export function App({ service, report }: { service: AlsatoolsService; report: DependencyReport }) {
+export function App({ service, report }: { service: ALSAChainService; report: DependencyReport }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [terminalSize, setTerminalSize] = useState({
@@ -549,7 +550,7 @@ function ProfileRow({
   profile: Profile;
   state?: PlaybackState;
   device?: Device;
-  status: string;
+  status?: string;
   selected: boolean;
   equalizer?: EqualizerBand[];
   width: number;
@@ -604,7 +605,7 @@ function ProfileRow({
             color={profile.eqEnabled === false ? 'yellow' : 'green'}
           />
         )}
-        <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />
+        {status && <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />}
       </Box>
     </Box>
   );
@@ -669,7 +670,6 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
             }
             valueColor={profile.eqEnabled === false ? 'green' : 'yellow'}
           />
-          <InfoRow label="Native rate" value="Unknown" valueColor="yellow" />
         </Box>
       </Panel>
       <Panel title="PERSISTENCE" color="gray">
