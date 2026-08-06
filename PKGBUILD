@@ -8,7 +8,6 @@ arch=('x86_64')
 url='https://github.com/mikelexp/alsa-virtual-tools'
 license=('custom')
 depends=('glibc' 'alsa-utils' 'caps' 'alsaequal')
-optdepends=('qastools: graphical QasMixer controls')
 source=("${url}/releases/download/v${pkgver}/alsa-virtual-tools-${pkgver}-linux-${CARCH}.tar.gz")
 sha256sums=('4afa38e7ee5962162e9a97d58801582fd9771207cfa6c102279be85c5c994a53')
 

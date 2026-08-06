@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -73,5 +73,114 @@ describe('Store', () => {
     await writeFile(controls, 'controls');
     await new Store(paths).deleteControlsFile(controls);
     await expect(access(controls)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a persisted configuration whose profiles share EQ controls', async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    temporaryDirectories.push(home);
+    const configDir = path.join(home, '.config', 'alsa-virtual-tools');
+    const controlsDir = path.join(configDir, 'controls');
+    const paths: Paths = {
+      home,
+      configDir,
+      stateDir: path.join(home, '.state'),
+      cacheDir: path.join(home, '.cache'),
+      configFile: path.join(configDir, 'config.json'),
+      controlsDir,
+      backupsDir: path.join(home, '.state', 'backups'),
+      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      asoundrc: path.join(home, '.asoundrc'),
+    };
+    const sharedControls = path.join(controlsDir, 'shared.bin');
+    const base = {
+      id: 'first',
+      displayName: 'First',
+      pcmName: 'first',
+      internalPcmName: 'first_internal',
+      ctlName: 'first',
+      target: 'plughw:CARD=TEST_DAC,DEV=0',
+      channels: 2,
+      controlsPath: sharedControls,
+      enabled: true,
+      eqEnabled: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        version: 1,
+        profiles: [
+          base,
+          {
+            ...base,
+            id: 'second',
+            displayName: 'Second',
+            pcmName: 'second',
+            internalPcmName: 'second_internal',
+            ctlName: 'second',
+          },
+        ],
+      }),
+    );
+
+    await expect(new Store(paths).load()).rejects.toThrow(
+      'Profiles must use separate controls files',
+    );
+  });
+
+  it('rejects distinct controls paths that are hard links to the same file', async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    temporaryDirectories.push(home);
+    const controlsDir = path.join(home, '.config', 'alsa-virtual-tools', 'controls');
+    const paths: Paths = {
+      home,
+      configDir: path.dirname(controlsDir),
+      stateDir: path.join(home, '.state'),
+      cacheDir: path.join(home, '.cache'),
+      configFile: path.join(path.dirname(controlsDir), 'config.json'),
+      controlsDir,
+      backupsDir: path.join(home, '.state', 'backups'),
+      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      asoundrc: path.join(home, '.asoundrc'),
+    };
+    const firstControls = path.join(controlsDir, 'first.bin');
+    const secondControls = path.join(controlsDir, 'second.bin');
+    await mkdir(controlsDir, { recursive: true });
+    await writeFile(firstControls, 'controls');
+    await link(firstControls, secondControls);
+    const base: Config['profiles'][number] = {
+      id: 'first',
+      displayName: 'First',
+      pcmName: 'first',
+      internalPcmName: 'first_internal',
+      ctlName: 'first',
+      target: 'plughw:CARD=TEST_DAC,DEV=0',
+      channels: 2,
+      controlsPath: firstControls,
+      enabled: true,
+      eqEnabled: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    await expect(
+      new Store(paths).save({
+        version: 1,
+        profiles: [
+          base,
+          {
+            ...base,
+            id: 'second',
+            displayName: 'Second',
+            pcmName: 'second',
+            internalPcmName: 'second_internal',
+            ctlName: 'second',
+            controlsPath: secondControls,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Profiles must not share hard-linked controls files');
   });
 });

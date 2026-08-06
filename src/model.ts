@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { z } from 'zod';
 
 export const alsaName = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, 'Use a safe ALSA name');
@@ -31,4 +32,8 @@ export function assertUniqueProfiles(profiles: Profile[]): void {
     new Set(ids).size !== ids.length
   )
     throw new Error('Profile ALSA names collide');
+
+  const controlsPaths = profiles.map((profile) => path.resolve(profile.controlsPath));
+  if (new Set(controlsPaths).size !== controlsPaths.length)
+    throw new Error('Profiles must use separate controls files');
 }

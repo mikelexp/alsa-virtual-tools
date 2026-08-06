@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { Config, Profile } from './model.js';
 import type { Paths } from './paths.js';
 import type { CommandRunner } from './runner.js';
 import { discoverDevices } from './alsa.js';
 import { checkDependencies } from './deps.js';
+import { parseEqualizerBands, type EqualizerBand } from './equalizer.js';
 import { Store } from './store.js';
 
 export class AlsatoolsService {
@@ -56,26 +56,28 @@ export class AlsatoolsService {
   async devices() {
     return discoverDevices(this.runner);
   }
-  async qasmixer(profile: Profile): Promise<void> {
+  async equalizerBands(profile: Profile): Promise<EqualizerBand[]> {
     if (profile.eqEnabled === false) throw new Error('EQ is disabled for this profile');
-    if (!(await this.validateProfile(profile)))
-      throw new Error(`CTL ${profile.ctlName} does not validate; QasMixer was not opened`);
-    // QasMixer is single-instance by default; replace any stale instance so the
-    // selected profile is always the one displayed.
-    await this.runner.run('pkill', ['-TERM', '-x', 'qasmixer']);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    const env = {
-      ...process.env,
-      LADSPA_PATH: process.env.LADSPA_PATH
-        ? `${process.env.LADSPA_PATH}:/usr/lib/ladspa`
-        : '/usr/lib/ladspa',
-    };
-    const child = spawn('qasmixer', ['-D', profile.ctlName], {
-      detached: true,
-      stdio: 'ignore',
-      env,
-    });
-    child.unref();
+    const result = await this.runner.run('amixer', ['-D', profile.ctlName, 'scontents']);
+    if (result.exitCode !== 0)
+      throw new Error(result.stderr.trim() || `Unable to read CTL ${profile.ctlName}`);
+    const bands = parseEqualizerBands(result.stdout);
+    if (bands.length === 0) throw new Error(`CTL ${profile.ctlName} exposes no equalizer bands`);
+    return bands;
+  }
+  async setEqualizerBand(profile: Profile, band: EqualizerBand, value: number): Promise<void> {
+    if (profile.eqEnabled === false) throw new Error('EQ is disabled for this profile');
+    if (!Number.isInteger(value) || value < band.min || value > band.max)
+      throw new Error(`Equalizer value must be between ${band.min} and ${band.max}`);
+    const result = await this.runner.run('amixer', [
+      '-D',
+      profile.ctlName,
+      'sset',
+      band.control,
+      String(value),
+    ]);
+    if (result.exitCode !== 0)
+      throw new Error(result.stderr.trim() || `Unable to update ${band.control}`);
   }
   createProfile(input: {
     id: string;

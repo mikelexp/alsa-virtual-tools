@@ -1,4 +1,4 @@
-import { profileSchema, type Profile } from './model.js';
+import { assertUniqueProfiles, profileSchema, type Profile } from './model.js';
 
 export const beginMarker = '# BEGIN ALSA-VIRTUAL-TOOLS';
 export const endMarker = '# END ALSA-VIRTUAL-TOOLS';
@@ -10,6 +10,7 @@ const hwTarget = (target: string) => {
 };
 
 export function renderBlock(profiles: Profile[], capsPath: string): string {
+  assertUniqueProfiles(profiles);
   const active = profiles.filter((profile) => profile.enabled);
   const entries = active.map((raw) => {
     const p = profileSchema.parse(raw);

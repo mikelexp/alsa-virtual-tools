@@ -23,4 +23,33 @@ describe('profile validation', () => {
     };
     expect(() => assertUniqueProfiles([profile, { ...profile, id: 'other' }])).toThrow();
   });
+
+  it('requires a separate normalized controls file for every profile', () => {
+    const profile = {
+      id: 'first',
+      pcmName: 'first',
+      internalPcmName: 'first_internal',
+      ctlName: 'first',
+      displayName: 'First',
+      target: 'plughw:CARD=TEST_DAC,DEV=0',
+      channels: 2,
+      controlsPath: '/tmp/controls/first.bin',
+      enabled: true,
+      eqEnabled: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const second = {
+      ...profile,
+      id: 'second',
+      pcmName: 'second',
+      internalPcmName: 'second_internal',
+      ctlName: 'second',
+      controlsPath: '/tmp/controls/nested/../first.bin',
+    };
+
+    expect(() => assertUniqueProfiles([profile, second])).toThrow(
+      'Profiles must use separate controls files',
+    );
+  });
 });

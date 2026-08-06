@@ -27,7 +27,9 @@ export class Store {
   constructor(private readonly paths: Paths) {}
   async load(): Promise<Config> {
     try {
-      return configSchema.parse(JSON.parse(await readFile(this.paths.configFile, 'utf8')));
+      const config = configSchema.parse(JSON.parse(await readFile(this.paths.configFile, 'utf8')));
+      await this.assertControlsIsolation(config.profiles);
+      return config;
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyConfig();
       throw new Error(
@@ -36,7 +38,7 @@ export class Store {
     }
   }
   async save(config: Config): Promise<void> {
-    assertUniqueProfiles(config.profiles);
+    await this.assertControlsIsolation(config.profiles);
     await atomicWrite(
       this.paths.configFile,
       JSON.stringify(configSchema.parse(config), null, 2) + '\n',
@@ -51,6 +53,22 @@ export class Store {
         throw new Error('Controls file cannot be a symlink');
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  async assertControlsIsolation(profiles: Config['profiles']): Promise<void> {
+    assertUniqueProfiles(profiles);
+    const fileIdentities = new Set<string>();
+    for (const profile of profiles) {
+      await this.assertControlsPath(profile.controlsPath);
+      try {
+        const info = await lstat(profile.controlsPath);
+        const identity = `${info.dev}:${info.ino}`;
+        if (fileIdentities.has(identity))
+          throw new Error('Profiles must not share hard-linked controls files');
+        fileIdentities.add(identity);
+      } catch (error: unknown) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
   }
   async deleteControlsFile(file: string): Promise<void> {
@@ -68,8 +86,7 @@ export class Store {
     capsPath: string,
     validate: () => Promise<boolean>,
   ): Promise<void> {
-    assertUniqueProfiles(config.profiles);
-    for (const profile of config.profiles) await this.assertControlsPath(profile.controlsPath);
+    await this.assertControlsIsolation(config.profiles);
     await mkdir(this.paths.controlsDir, { recursive: true, mode: 0o700 });
     let original = '';
     let target = this.paths.asoundrc;

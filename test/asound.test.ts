@@ -27,6 +27,7 @@ describe('managed ALSA block', () => {
           pcmName: 'other_eq',
           internalPcmName: 'other_eq_internal',
           ctlName: 'other_eq',
+          controlsPath: '/tmp/other_eq.bin',
         },
       ],
       '/usr/lib/ladspa/caps.so',
@@ -55,5 +56,23 @@ describe('managed ALSA block', () => {
   it('rejects malformed markers and detects external equal definitions', () => {
     expect(() => replaceManagedBlock('# BEGIN ALSA-VIRTUAL-TOOLS\n', 'x')).toThrow();
     expect(unmanagedEqualDefinitions('pcm.external { type equal\n }')).toEqual(['external']);
+  });
+
+  it('refuses to render profiles that share EQ controls', () => {
+    expect(() =>
+      renderBlock(
+        [
+          profile,
+          {
+            ...profile,
+            id: 'other_eq',
+            pcmName: 'other_eq',
+            internalPcmName: 'other_eq_internal',
+            ctlName: 'other_eq',
+          },
+        ],
+        '/caps.so',
+      ),
+    ).toThrow('Profiles must use separate controls files');
   });
 });

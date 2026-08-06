@@ -39,9 +39,7 @@ export async function checkDependencies(
   );
   const capsPath = capsCandidates.find((candidate) => candidate.ok)?.file;
   const commands = await Promise.all(
-    ['aplay', 'amixer', 'qasmixer'].map(
-      async (name) => [name, await executable(runner, name)] as const,
-    ),
+    ['aplay', 'amixer'].map(async (name) => [name, await executable(runner, name)] as const),
   );
   const equalDirectories = ['/usr/lib/alsa-lib', '/usr/lib64/alsa-lib', '/usr/local/lib/alsa-lib'];
   const equalModules = await Promise.all(
@@ -94,12 +92,6 @@ export async function checkDependencies(
       detail: capsPath ?? 'Not found',
     },
     {
-      name: 'QasMixer',
-      purpose: 'Graphical equalizer controls',
-      ok: lookup.get('qasmixer') ?? false,
-      detail: '',
-    },
-    {
       name: 'LADSPA_PATH',
       purpose: 'Let ALSA find LADSPA plugins',
       ok: ladspaPaths.some((p) => p === '/usr/lib/ladspa') && Boolean(capsPath),
@@ -113,9 +105,6 @@ export async function checkDependencies(
     dependencies,
     capsPath,
     ladspaPath: ladspaPaths.join(':'),
-    installCommands: [
-      `sudo pacman -S alsa-utils caps qastools`,
-      `${helper ?? '<AUR-helper>'} -S alsaequal`,
-    ],
+    installCommands: [`sudo pacman -S alsa-utils caps`, `${helper ?? '<AUR-helper>'} -S alsaequal`],
   };
 }

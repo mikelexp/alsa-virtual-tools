@@ -4,10 +4,12 @@ import { StatusMessage } from '@inkjs/ui';
 import type { Device, PlaybackState } from './alsa.js';
 import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
+import { EqualizerScreen } from './equalizer-ui.js';
+import { equalizerBarRows, type EqualizerBand } from './equalizer.js';
 import type { Profile } from './model.js';
 import type { AlsatoolsService } from './service.js';
 
-type Screen = 'list' | 'detail' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
+type Screen = 'list' | 'detail' | 'equalizer' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
 type Color =
   | 'green'
   | 'yellow'
@@ -61,10 +63,34 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
   const [devices, setDevices] = useState<Device[]>([]);
   const [selection, setSelection] = useState(0);
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
+  const [equalizers, setEqualizers] = useState<Record<string, EqualizerBand[]>>({});
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [eqConfirmation, setEqConfirmation] = useState<Profile | null>(null);
 
-  const refresh = async () => {
+  const refreshEqualizers = async (sourceProfiles?: Profile[]) => {
+    const candidates = sourceProfiles ?? (await service.list());
+    const activeProfiles = candidates.filter(
+      (candidate) => candidate.enabled && candidate.eqEnabled !== false,
+    );
+    const snapshots = await Promise.all(
+      activeProfiles.map(async (candidate) => {
+        try {
+          return [candidate.id, await service.equalizerBands(candidate)] as const;
+        } catch {
+          return [candidate.id, null] as const;
+        }
+      }),
+    );
+    setEqualizers((current) =>
+      Object.fromEntries(
+        snapshots
+          .map(([id, bands]) => [id, bands ?? current[id]] as const)
+          .filter((entry): entry is readonly [string, EqualizerBand[]] => Boolean(entry[1])),
+      ),
+    );
+  };
+
+  const refresh = async (includeEqualizers = false) => {
     const [nextProfiles, nextDevices] = await Promise.all([service.list(), service.devices()]);
     setProfiles(nextProfiles);
     setDevices(nextDevices);
@@ -78,13 +104,20 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       }),
     );
     setStates(Object.fromEntries(mapped));
+    if (includeEqualizers) await refreshEqualizers(nextProfiles);
   };
 
   useEffect(() => {
-    void refresh();
+    void refresh(true);
     const timer = setInterval(() => void refresh(), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (screen !== 'list') return;
+    const timer = setInterval(() => void refreshEqualizers(), 5000);
+    return () => clearInterval(timer);
+  }, [screen]);
 
   useEffect(() => {
     const updateTerminalSize = () =>
@@ -94,6 +127,22 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       stdout.off('resize', updateTerminalSize);
     };
   }, [stdout]);
+
+  const openEqualizer = (selectedProfile: Profile) => {
+    if (!selectedProfile.enabled) {
+      setFeedback({
+        variant: 'warning',
+        title: 'PROFILE IS DISABLED',
+        message: 'Enable the profile before opening its equalizer controls.',
+      });
+    } else if (selectedProfile.eqEnabled === false) {
+      setFeedback({
+        variant: 'warning',
+        title: 'EQ IS BYPASSED',
+        message: 'Enable EQ before opening its controls.',
+      });
+    } else setScreen('equalizer');
+  };
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
@@ -111,7 +160,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
               title: profile.eqEnabled === false ? 'EQ ENABLED' : 'EQ BYPASSED',
               message: 'Restart playback to reopen the virtual PCM in the new mode.',
             });
-            return refresh();
+            return refresh(true);
           })
           .catch((error: Error) =>
             setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
@@ -127,28 +176,21 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
       if (key.return && profiles[selection]) setScreen('detail');
       if (input === 'n') setScreen('new');
       if (input === 'e' && profiles[selection]) setScreen('edit');
-      if (input === 'r') void refresh();
+      if (input === 'r') void refresh(true);
       if (input === '?') setScreen('help');
       if (input === 'd' && profiles[selection]) setScreen('delete');
       if (input === 'i') setScreen('diagnostics');
-      if (input === 'm' && profiles[selection])
-        void service
-          .qasmixer(profiles[selection])
-          .then(() =>
-            setFeedback({ variant: 'success', title: 'QASMIXER', message: 'QasMixer launched.' }),
-          )
-          .catch((error: Error) =>
-            setFeedback({ variant: 'error', title: 'QASMIXER FAILED', message: error.message }),
-          );
+      if (input === 'm' && profiles[selection]) openEqualizer(profiles[selection]);
       if (input === 'b' && profiles[selection]) {
         setEqConfirmation(profiles[selection]);
       }
     } else if (screen === 'detail') {
       if (key.escape) setScreen('list');
       if (input === 'e' && profile) setScreen('edit');
+      if (input === 'm' && profile) openEqualizer(profile);
       if (input === 'b' && profile) setEqConfirmation(profile);
       if (input === 'd' && profile) setScreen('delete');
-    } else if (key.escape) setScreen('list');
+    } else if (screen !== 'equalizer' && key.escape) setScreen('list');
   });
 
   const profile = profiles[selection];
@@ -164,9 +206,35 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
     >
       <Header report={report} />
       {screen === 'list' && (
-        <List profiles={profiles} selection={selection} states={states} devices={devices} />
+        <List
+          profiles={profiles}
+          selection={selection}
+          states={states}
+          devices={devices}
+          equalizers={equalizers}
+          width={terminalSize.width}
+        />
       )}
       {screen === 'detail' && profile && <Details profile={profile} state={states[profile.id]} />}
+      {screen === 'equalizer' && profile && (
+        <EqualizerScreen
+          service={service}
+          profile={profile}
+          width={terminalSize.width}
+          height={terminalSize.height}
+          active={!feedback && !eqConfirmation}
+          onBack={() => {
+            setScreen('list');
+            void refreshEqualizers(profiles);
+          }}
+          onError={(message) =>
+            setFeedback({ variant: 'error', title: 'EQ UPDATE FAILED', message })
+          }
+          onBandsChange={(bands) =>
+            setEqualizers((current) => ({ ...current, [profile.id]: bands }))
+          }
+        />
+      )}
       {screen === 'help' && <Help />}
       {screen === 'diagnostics' && <Diagnostics report={report} />}
       {screen === 'new' && (
@@ -176,7 +244,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           onDone={(message) => {
             setFeedback({ variant: 'success', title: 'PROFILE CREATED', message });
             setScreen('list');
-            void refresh();
+            void refresh(true);
           }}
         />
       )}
@@ -188,7 +256,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           onDone={(message) => {
             setFeedback({ variant: 'success', title: 'PROFILE UPDATED', message });
             setScreen('list');
-            void refresh();
+            void refresh(true);
           }}
         />
       )}
@@ -200,7 +268,7 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
           onDone={(message) => {
             setFeedback({ variant: 'success', title: 'PROFILE REMOVED', message });
             setScreen('list');
-            void refresh();
+            void refresh(true);
           }}
         />
       )}
@@ -209,6 +277,8 @@ export function App({ service, report }: { service: AlsatoolsService; report: De
         <Navigation />
       ) : screen === 'detail' ? (
         <DetailNavigation />
+      ) : screen === 'equalizer' ? (
+        <EqualizerNavigation />
       ) : (
         <Text color={MUTED}>esc back</Text>
       )}
@@ -370,7 +440,7 @@ function Navigation() {
         <KeyHint keyName="n" label="new" />
         <KeyHint keyName="e" label="edit" />
         <KeyHint keyName="d" label="delete" />
-        <KeyHint keyName="m" label="QasMixer" />
+        <KeyHint keyName="m" label="equalizer" />
         <KeyHint keyName="b" label="toggle EQ" />
       </Box>
       <Box gap={2} flexWrap="wrap">
@@ -387,8 +457,21 @@ function DetailNavigation() {
   return (
     <Box marginTop={1} gap={2} flexWrap="wrap">
       <KeyHint keyName="e" label="edit interface" />
+      <KeyHint keyName="m" label="equalizer" />
       <KeyHint keyName="b" label="toggle EQ" />
       <KeyHint keyName="d" label="delete interface" />
+      <KeyHint keyName="esc" label="back" />
+    </Box>
+  );
+}
+
+function EqualizerNavigation() {
+  return (
+    <Box marginTop={1} gap={2} flexWrap="wrap">
+      <KeyHint keyName="← / →" label="select band" />
+      <KeyHint keyName="↑ / ↓" label="adjust" />
+      <KeyHint keyName="shift" label="step 5" />
+      <KeyHint keyName="r" label="reload" />
       <KeyHint keyName="esc" label="back" />
     </Box>
   );
@@ -399,11 +482,15 @@ function List({
   selection,
   states,
   devices,
+  equalizers,
+  width,
 }: {
   profiles: Profile[];
   selection: number;
   states: Record<string, PlaybackState>;
   devices: Device[];
+  equalizers: Record<string, EqualizerBand[]>;
+  width: number;
 }) {
   return (
     <Box flexDirection="column">
@@ -424,7 +511,7 @@ function List({
           </Box>
         </Panel>
       ) : (
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
           {profiles.map((profile, index) => {
             const device = devices.find((candidate) => candidate.target === profile.target);
             const state = states[profile.id];
@@ -437,6 +524,8 @@ function List({
                 device={device}
                 status={status}
                 selected={index === selection}
+                equalizer={equalizers[profile.id]}
+                width={width}
               />
             );
           })}
@@ -452,17 +541,22 @@ function ProfileRow({
   device,
   status,
   selected,
+  equalizer,
+  width,
 }: {
   profile: Profile;
   state?: PlaybackState;
   device?: Device;
   status: string;
   selected: boolean;
+  equalizer?: EqualizerBand[];
+  width: number;
 }) {
   const audioDetails = state?.rate && state.format ? `${state.rate} ${state.format}` : 'idle';
+  const equalizerWidth = Math.max(16, Math.min(42, Math.floor(width * 0.4)));
   return (
     <Box
-      flexDirection="column"
+      minHeight={5}
       backgroundColor={selected ? '#2d3850' : SURFACE}
       borderStyle="bold"
       borderLeft
@@ -471,9 +565,8 @@ function ProfileRow({
       borderBottom={false}
       borderColor={selected ? ACCENT : 'gray'}
       paddingX={2}
-      paddingY={1}
     >
-      <Box justifyContent="space-between">
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} justifyContent="center">
         <Box>
           <Text color={selected ? ACCENT : 'gray'} bold>
             {selected ? '> ' : '  '}
@@ -483,26 +576,70 @@ function ProfileRow({
           </Text>
           <Text color={MUTED}> {profile.pcmName}</Text>
         </Box>
-        <Box>
-          {!profile.enabled && <Badge label="OFF" color="gray" />}
-          {profile.enabled && (
-            <Badge
-              label={profile.eqEnabled === false ? 'BYPASS' : 'EQ'}
-              color={profile.eqEnabled === false ? 'yellow' : 'green'}
-            />
-          )}
-          <Text> </Text>
-          <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />
+        <Box marginLeft={2}>
+          <Text color="magenta">audio</Text>
+          <Text> {audioDetails}</Text>
+          <Text color={MUTED}>
+            {' '}
+            {'->'} {device?.cardName ?? profile.target}
+          </Text>
         </Box>
       </Box>
-      <Box marginLeft={2}>
-        <Text color="magenta">audio</Text>
-        <Text> {audioDetails}</Text>
-        <Text color={MUTED}>
-          {' '}
-          {'->'} {device?.cardName ?? profile.target}
-        </Text>
+      {profile.enabled && profile.eqEnabled !== false && (
+        <ProfileEqualizer bands={equalizer} width={equalizerWidth} selected={selected} />
+      )}
+      <Box
+        width={15}
+        flexDirection="column"
+        alignItems="flex-end"
+        justifyContent="center"
+        paddingLeft={1}
+      >
+        {!profile.enabled && <Badge label="OFF" color="gray" />}
+        {profile.enabled && (
+          <Badge
+            label={profile.eqEnabled === false ? 'BYPASS' : 'EQ'}
+            color={profile.eqEnabled === false ? 'yellow' : 'green'}
+          />
+        )}
+        <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />
       </Box>
+    </Box>
+  );
+}
+
+function ProfileEqualizer({
+  bands,
+  width,
+  selected,
+}: {
+  bands?: EqualizerBand[];
+  width: number;
+  selected: boolean;
+}) {
+  const graphWidth = Math.max(1, width - 4);
+  const rows = bands ? equalizerBarRows(bands, 4, graphWidth) : [];
+  return (
+    <Box
+      width={width}
+      height="100%"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      borderStyle="single"
+      borderTop={false}
+      borderBottom={false}
+      borderColor={selected ? ACCENT : '#2d3850'}
+      paddingX={1}
+    >
+      <Text bold color={selected ? ACCENT_BRIGHT : ACCENT}>
+        EQ{bands ? ` · ${bands.length} bands` : ' · reading CTL'}
+      </Text>
+      {rows.map((row, index) => (
+        <Text key={index} color={selected ? ACCENT_BRIGHT : TEXT} wrap="truncate">
+          {row}
+        </Text>
+      ))}
     </Box>
   );
 }
@@ -593,7 +730,7 @@ function Help() {
           <Text color={ACCENT} bold>
             m
           </Text>{' '}
-          QasMixer{' '}
+          equalizer{' '}
           <Text color={ACCENT} bold>
             b
           </Text>{' '}

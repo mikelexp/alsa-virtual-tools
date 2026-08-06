@@ -50,6 +50,15 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Preserve the `.asoundrc` symlink itself: write atomically to its resolved target and retain the link.
 - Controls files must remain inside the configured `controlsDir`; reject traversal and symlinks.
 
+## Equalizer Backend Direction
+
+- Keep CAPS `Eq10` as the only active backend for now. It provides 10 fixed bands; do not migrate existing profiles or add another backend unless explicitly requested.
+- Never hard-code 10 bands in the model or TUI. Discover the current controls through `amixer` so rendering and editing remain compatible with a future backend change.
+- Every virtual card must have its own normalized controls path and must not share the same file through aliases or hard links.
+- The preferred future higher-band option is the SWH LADSPA `mbeq` module from `swh-plugins`. It exposes 15 fixed bands and should require backend selection/configuration rather than custom DSP. Upstream definition: <https://github.com/swh/ladspa/blob/master/mbeq_1197.xml>.
+- LSP provides 16- and 32-band LADSPA graphic equalizers, but they also expose many non-band controls. They are not clean `alsaequal` drop-ins without explicit control metadata/filtering.
+- Fixed LADSPA equalizers allow choosing a preset topology (for example, Eq10 or mbeq), not adding or removing arbitrary individual bands. Arbitrary topology would require a different host, a plugin chain, or custom DSP.
+
 ## Integration Notes
 
 - Supported dependencies are `alsa-utils`, `caps`, `alsaequal`, and `qastools`/QasMixer.

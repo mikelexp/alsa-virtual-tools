@@ -4,8 +4,7 @@ import type { CommandRunner } from '../src/runner.js';
 
 const runner: CommandRunner = {
   async run(file, args = []) {
-    const command = `${file} ${args.join(' ')}`;
-    return { stdout: '', stderr: '', exitCode: command.includes('qasmixer') ? 1 : 0 };
+    return { stdout: '', stderr: '', exitCode: file || args.length ? 0 : 1 };
   },
 };
 
@@ -16,5 +15,6 @@ describe('dependency check', () => {
     expect(
       report.dependencies.find((dependency) => dependency.name === 'alsaequal PCM/CTL modules'),
     ).toBeDefined();
+    expect(report.dependencies.some((dependency) => dependency.name === 'QasMixer')).toBe(false);
   });
 });

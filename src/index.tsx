@@ -55,10 +55,6 @@ async function main(): Promise<void> {
   }
   const profile = (await service.list()).find((p) => p.id === target || p.pcmName === target);
   if (!profile) throw new Error(`Unknown profile: ${target ?? ''}`);
-  if (command === 'qasmixer') {
-    await service.qasmixer(profile);
-    return;
-  }
   if (command === 'status') {
     const device = (await service.devices()).find((d) => d.target === profile.target);
     console.log(

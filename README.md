@@ -1,6 +1,6 @@
 # alsa-virtual-tools
 
-Keyboard-driven fullscreen TUI and CLI for managing safe, per-device virtual PCMs with optional `alsaequal` DSP. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSA-VIRTUAL-TOOLS` managed block, after an explicit create/apply action.
+Keyboard-driven fullscreen TUI and CLI for managing safe, per-device virtual PCMs with optional `alsaequal` DSP. It builds per-device ALSA PCM signal chains: direct hardware paths, isolated EQ profiles, and optional DSP without changing global PipeWire policy. The JSON configuration under XDG config is authoritative; `~/.asoundrc` is changed only inside the `ALSA-VIRTUAL-TOOLS` managed block, after an explicit create/apply action.
 
 ## Install: Arch / CachyOS
 
@@ -11,7 +11,7 @@ alsa-virtual-tools doctor
 
 The release binary includes its JavaScript runtime and npm dependencies. It does
 not include system ALSA components, which remain package dependencies:
-`alsa-utils`, `caps`, `alsaequal`, and optionally `qastools` for QasMixer.
+`alsa-utils`, `caps`, and `alsaequal`.
 
 To install a release manually, download the tarball from GitHub Releases, extract
 it, and run:
@@ -79,8 +79,12 @@ alsa-virtual-tools status dac_eq
 alsa-virtual-tools validate
 alsa-virtual-tools repair
 alsa-virtual-tools print-config
-alsa-virtual-tools qasmixer dac_eq
 ```
+
+In the TUI, select an EQ-enabled profile and press `m` to open the integrated
+graphic equalizer. Its bands, labels, ranges, and current values are discovered
+from the profile's ALSA CTL. Use left/right to select a band and up/down to
+adjust both channels. Changes apply immediately to active equalized playback.
 
 ## Generated configuration
 
