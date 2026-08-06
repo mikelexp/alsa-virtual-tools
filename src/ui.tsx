@@ -517,16 +517,18 @@ function List({
             const state = states[profile.id];
             const status = statusLabel(state, device);
             return (
-              <ProfileRow
-                key={profile.id}
-                profile={profile}
-                state={state}
-                device={device}
-                status={status}
-                selected={index === selection}
-                equalizer={equalizers[profile.id]}
-                width={width}
-              />
+              <React.Fragment key={profile.id}>
+                <ProfileRow
+                  profile={profile}
+                  state={state}
+                  device={device}
+                  status={status}
+                  selected={index === selection}
+                  equalizer={equalizers[profile.id]}
+                  width={width}
+                />
+                {index < profiles.length - 1 && <Box height={1} />}
+              </React.Fragment>
             );
           })}
         </Box>
