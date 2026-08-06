@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { EqualizerBand } from './equalizer.js';
-import { clampBandValue } from './equalizer.js';
+import { clampBandValue, equalizerVerticalCell } from './equalizer.js';
 import type { Profile } from './model.js';
-import type { AlsatoolsService } from './service.js';
+import type { ALSAChainService } from './service.js';
 
 const ACCENT = '#315BEF';
 const TEXT = '#d7dce5';
@@ -20,7 +20,7 @@ export function EqualizerScreen({
   onError,
   onBandsChange,
 }: {
-  service: AlsatoolsService;
+  service: ALSAChainService;
   profile: Profile;
   width: number;
   height: number;
@@ -192,19 +192,19 @@ function VerticalBands({
     <Box justifyContent="center" gap={1} paddingTop={1}>
       {bands.map((band, index) => {
         const selected = index === selection;
-        const ratio = (band.value - band.min) / Math.max(1, band.max - band.min);
         return (
           <Box key={band.control} width={columnWidth} flexDirection="column" alignItems="center">
             {Array.from({ length: levels }, (_, row) => {
-              const filled = ratio >= (levels - row) / levels;
+              const cell = equalizerVerticalCell(band, row, levels);
+              const filled = cell !== '··';
               return (
                 <Text key={row} color={selected ? ACCENT : filled ? TEXT : MUTED}>
-                  {filled ? '██' : '··'}
+                  {cell}
                 </Text>
               );
             })}
             <Text bold={selected} color={selected ? ACCENT : TEXT}>
-              {String(band.value).padStart(3)}
+              {String(band.value).padStart(2)}
             </Text>
             <Text bold={selected} color={selected ? ACCENT : MUTED} wrap="truncate">
               {band.label.replaceAll(' ', '')}
@@ -245,7 +245,7 @@ function HorizontalBands({
           <Text key={band.control} color={selected ? ACCENT : TEXT} bold={selected}>
             {selected ? '›' : ' '} {band.label.padStart(7)} [{'█'.repeat(filled)}
             <Text color={MUTED}>{'·'.repeat(barWidth - filled)}</Text>]{' '}
-            {String(band.value).padStart(3)}
+            {String(band.value).padStart(2)}
           </Text>
         );
       })}

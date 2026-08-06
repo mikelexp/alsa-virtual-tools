@@ -7,7 +7,7 @@ import { checkDependencies } from './deps.js';
 import { parseEqualizerBands, type EqualizerBand } from './equalizer.js';
 import { Store } from './store.js';
 
-export class AlsatoolsService {
+export class ALSAChainService {
   readonly store: Store;
   constructor(
     readonly paths: Paths,

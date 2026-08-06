@@ -7,7 +7,7 @@ import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
 import { equalizerBarRows, type EqualizerBand } from './equalizer.js';
 import type { Profile } from './model.js';
-import type { AlsatoolsService } from './service.js';
+import type { ALSAChainService } from './service.js';
 
 type Screen = 'list' | 'detail' | 'equalizer' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
 type Color =
@@ -66,7 +66,6 @@ export function App({ service, report }: { service: ALSAChainService; report: De
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
   const [equalizers, setEqualizers] = useState<Record<string, EqualizerBand[]>>({});
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [eqConfirmation, setEqConfirmation] = useState<Profile | null>(null);
 
   const refreshEqualizers = async (sourceProfiles?: Profile[]) => {
     const candidates = sourceProfiles ?? (await service.list());
@@ -139,36 +138,24 @@ export function App({ service, report }: { service: ALSAChainService; report: De
     } else if (selectedProfile.eqEnabled === false) {
       setFeedback({
         variant: 'warning',
-        title: 'EQ IS BYPASSED',
-        message: 'Enable EQ before opening its controls.',
+        title: 'BITPERFECT MODE',
+        message: 'Switch to EQ mode before opening its controls.',
       });
     } else setScreen('equalizer');
+  };
+
+  const toggleEq = (profile: Profile) => {
+    void service
+      .setEqEnabled(profile.id, profile.eqEnabled === false)
+      .then(() => refresh(true))
+      .catch((error: Error) =>
+        setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
+      );
   };
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
     if (feedback) return;
-    if (eqConfirmation) {
-      if (key.escape) setEqConfirmation(null);
-      if (key.return) {
-        const profile = eqConfirmation;
-        setEqConfirmation(null);
-        void service
-          .setEqEnabled(profile.id, profile.eqEnabled === false)
-          .then(() => {
-            setFeedback({
-              variant: 'success',
-              title: profile.eqEnabled === false ? 'EQ ENABLED' : 'EQ BYPASSED',
-              message: 'Restart playback to reopen the virtual PCM in the new mode.',
-            });
-            return refresh(true);
-          })
-          .catch((error: Error) =>
-            setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
-          );
-      }
-      return;
-    }
     if (screen === 'list') {
       if (input === 'q') exit();
       if (key.downArrow)
@@ -182,14 +169,12 @@ export function App({ service, report }: { service: ALSAChainService; report: De
       if (input === 'd' && profiles[selection]) setScreen('delete');
       if (input === 'i') setScreen('diagnostics');
       if (input === 'm' && profiles[selection]) openEqualizer(profiles[selection]);
-      if (input === 'b' && profiles[selection]) {
-        setEqConfirmation(profiles[selection]);
-      }
+      if (input === 'b' && profiles[selection]) toggleEq(profiles[selection]);
     } else if (screen === 'detail') {
       if (key.escape) setScreen('list');
       if (input === 'e' && profile) setScreen('edit');
       if (input === 'm' && profile) openEqualizer(profile);
-      if (input === 'b' && profile) setEqConfirmation(profile);
+      if (input === 'b' && profile) toggleEq(profile);
       if (input === 'd' && profile) setScreen('delete');
     } else if (screen !== 'equalizer' && key.escape) setScreen('list');
   });
@@ -223,7 +208,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           profile={profile}
           width={terminalSize.width}
           height={terminalSize.height}
-          active={!feedback && !eqConfirmation}
+          active={!feedback}
           onBack={() => {
             setScreen('list');
             void refreshEqualizers(profiles);
@@ -290,12 +275,6 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           width={Math.max(1, Math.min(58, terminalSize.width - 6))}
         />
       )}
-      {eqConfirmation && (
-        <EqConfirmationModal
-          profile={eqConfirmation}
-          width={Math.max(1, Math.min(58, terminalSize.width - 6))}
-        />
-      )}
     </Box>
   );
 }
@@ -339,41 +318,13 @@ function FeedbackModal({
   );
 }
 
-function EqConfirmationModal({ profile, width }: { profile: Profile; width: number }) {
-  const enabling = profile.eqEnabled === false;
-  return (
-    <Box position="absolute" width="100%" height="100%" alignItems="center" justifyContent="center">
-      <Box
-        width={width}
-        flexDirection="column"
-        paddingX={2}
-        paddingY={1}
-        backgroundColor={SURFACE}
-        borderStyle="bold"
-        borderLeft
-        borderTop={false}
-        borderRight={false}
-        borderBottom={false}
-        borderColor={enabling ? 'green' : 'yellow'}
-      >
-        <StatusMessage variant="warning">CONFIRM EQ CHANGE</StatusMessage>
-        <Text color={TEXT}>
-          {enabling ? 'Enable DSP/alsaequal' : 'Disable EQ and use the direct bit-perfect path'} for{' '}
-          {profile.displayName}?
-        </Text>
-        <Text color={MUTED}>enter to confirm, esc to cancel</Text>
-      </Box>
-    </Box>
-  );
-}
-
 function Header({ report }: { report: DependencyReport }) {
   const healthy = report.dependencies.every((dependency) => dependency.ok);
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box justifyContent="space-between">
         <Text bold color={ACCENT_BRIGHT}>
-          ALSA <Text color="white">VIRTUAL TOOLS</Text>
+          ALSA <Text color="white">CHAIN</Text>
         </Text>
         <Text color={healthy ? 'green' : 'yellow'}>
           {healthy ? '[ SYSTEM READY ]' : '[ CHECK REQUIRED ]'}
@@ -442,7 +393,7 @@ function Navigation() {
         <KeyHint keyName="e" label="edit" />
         <KeyHint keyName="d" label="delete" />
         <KeyHint keyName="m" label="equalizer" />
-        <KeyHint keyName="b" label="toggle EQ" />
+        <KeyHint keyName="b" label="switch EQ / BITPERFECT" />
       </Box>
       <Box gap={2} flexWrap="wrap">
         <KeyHint keyName="r" label="refresh" />
@@ -459,7 +410,7 @@ function DetailNavigation() {
     <Box marginTop={1} gap={2} flexWrap="wrap">
       <KeyHint keyName="e" label="edit interface" />
       <KeyHint keyName="m" label="equalizer" />
-      <KeyHint keyName="b" label="toggle EQ" />
+      <KeyHint keyName="b" label="switch EQ / BITPERFECT" />
       <KeyHint keyName="d" label="delete interface" />
       <KeyHint keyName="esc" label="back" />
     </Box>
@@ -601,8 +552,8 @@ function ProfileRow({
         {!profile.enabled && <Badge label="OFF" color="gray" />}
         {profile.enabled && (
           <Badge
-            label={profile.eqEnabled === false ? 'BYPASS' : 'EQ'}
-            color={profile.eqEnabled === false ? 'yellow' : 'green'}
+            label={profile.eqEnabled === false ? 'BITPERFECT' : 'EQ'}
+            color={profile.eqEnabled === false ? 'green' : 'yellow'}
           />
         )}
         {status && <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />}
@@ -666,7 +617,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
           <InfoRow
             label="Processing"
             value={
-              profile.eqEnabled === false ? 'Bypass - bit-perfect path' : 'DSP - alsaequal enabled'
+              profile.eqEnabled === false ? 'BITPERFECT - direct path' : 'EQ - alsaequal active'
             }
             valueColor={profile.eqEnabled === false ? 'green' : 'yellow'}
           />
@@ -676,7 +627,9 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
         <Box flexDirection="column" paddingY={1}>
           <InfoRow label="Controls" value={profile.controlsPath} />
           <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
-          <Text color={MUTED}>b toggles EQ bypass; restart playback after changing mode.</Text>
+          <Text color={MUTED}>
+            b switches EQ / BITPERFECT; restart playback after changing mode.
+          </Text>
         </Box>
       </Panel>
     </Box>
@@ -736,7 +689,7 @@ function Help() {
           <Text color={ACCENT} bold>
             b
           </Text>{' '}
-          toggle EQ{' '}
+          switch EQ / BITPERFECT{' '}
           <Text color={ACCENT} bold>
             r
           </Text>{' '}
@@ -806,7 +759,7 @@ function NewProfile({
   existing,
   onDone,
 }: {
-  service: AlsatoolsService;
+  service: ALSAChainService;
   devices: Device[];
   existing?: Profile;
   onDone: (message: string) => void;
@@ -1007,7 +960,7 @@ function DeleteProfile({
   width,
   onDone,
 }: {
-  service: AlsatoolsService;
+  service: ALSAChainService;
   profile: Profile;
   width: number;
   onDone: (message: string) => void;

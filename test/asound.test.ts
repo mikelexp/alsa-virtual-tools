@@ -34,7 +34,7 @@ describe('managed ALSA block', () => {
     );
     expect(result).toContain('pcm.usb_dac_eq');
     expect(result).toContain('pcm.other_eq');
-    expect(result).toContain('ALSATools Equalizer: USB DAC');
+    expect(result).toContain('ALSAChain EQ: USB DAC');
   });
   it('preserves bytes outside its block', () => {
     const before = '# external\npcm.old { type hw }\n';
@@ -44,17 +44,17 @@ describe('managed ALSA block', () => {
       true,
     );
   });
-  it('renders a direct bypass path without equalizer definitions', () => {
+  it('renders a direct BITPERFECT path without equalizer definitions', () => {
     const result = renderBlock([{ ...profile, eqEnabled: false }], '/caps.so');
     expect(result).toContain('type copy');
     expect(result).toContain('slave.pcm "hw:CARD=TEST_DAC,DEV=0"');
-    expect(result).toContain('ALSATools Bit-perfect: USB DAC');
+    expect(result).toContain('ALSAChain BITPERFECT: USB DAC');
     expect(result).not.toContain('type plug');
     expect(result).not.toContain('type equal');
     expect(result).not.toContain('ctl.usb_dac_eq');
   });
   it('rejects malformed markers and detects external equal definitions', () => {
-    expect(() => replaceManagedBlock('# BEGIN ALSA-VIRTUAL-TOOLS\n', 'x')).toThrow();
+    expect(() => replaceManagedBlock('# BEGIN ALSACHAIN\n', 'x')).toThrow();
     expect(unmanagedEqualDefinitions('pcm.external { type equal\n }')).toEqual(['external']);
   });
 

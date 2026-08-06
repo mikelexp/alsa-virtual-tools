@@ -42,6 +42,17 @@ export function clampBandValue(band: EqualizerBand, value: number): number {
   return Math.max(band.min, Math.min(band.max, Math.round(value)));
 }
 
+const verticalBlocks = ['·', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+export function equalizerVerticalCell(band: EqualizerBand, row: number, rowCount: number): string {
+  if (rowCount < 1 || row < 0 || row >= rowCount) return '··';
+  const ratio = normalizedValue(band);
+  const totalUnits = Math.round(ratio * rowCount * 8);
+  const rowBase = (rowCount - row - 1) * 8;
+  const fill = Math.max(0, Math.min(8, totalUnits - rowBase));
+  return (verticalBlocks[fill] ?? '·').repeat(2);
+}
+
 const normalizedValue = (band: EqualizerBand): number =>
   Math.max(0, Math.min(1, (band.value - band.min) / Math.max(1, band.max - band.min)));
 
@@ -68,15 +79,14 @@ export function equalizerBarRows(
   );
   const values = compressBands(bands, columnCount);
   const separator = separated ? ' ' : '';
-  const partialBlocks = ['·', '▂', '▄', '▆', '█'];
 
   return Array.from({ length: rowCount }, (_, row) => {
     const base = rowCount - row - 1;
     return values
       .map((value) => {
         const fill = value * rowCount - base;
-        const index = Math.max(0, Math.min(4, Math.ceil(fill * 4)));
-        return partialBlocks[index] ?? partialBlocks[0];
+        const index = Math.max(0, Math.min(8, Math.round(fill * 8)));
+        return verticalBlocks[index] ?? verticalBlocks[0];
       })
       .join(separator);
   });

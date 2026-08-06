@@ -1,10 +1,10 @@
 {
-  "name": "alsa-virtual-tools",
+  "name": "alsachain",
   "version": "0.1.0",
   "description": "Safe ALSA alsaequal virtual PCM manager",
   "type": "module",
   "bin": {
-    "alsa-virtual-tools": "dist/index.js"
+    "alsachain": "dist/index.js"
   },
   "scripts": {
     "dev": "tsx src/index.tsx",

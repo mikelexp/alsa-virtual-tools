@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { clampBandValue, equalizerBarRows, parseEqualizerBands } from '../src/equalizer.js';
+import {
+  clampBandValue,
+  equalizerBarRows,
+  equalizerVerticalCell,
+  parseEqualizerBands,
+} from '../src/equalizer.js';
 
 const amixerOutput = `Simple mixer control '00. 31 Hz',0
   Capabilities: pvolume
@@ -51,7 +56,7 @@ describe('equalizer controls', () => {
 
   it('renders a vertical graph using the discovered band count', () => {
     const bands = parseEqualizerBands(amixerOutput);
-    expect(equalizerBarRows(bands, 4, 8)).toEqual(['· ·', '▆ ·', '█ ▆', '█ █']);
+    expect(equalizerBarRows(bands, 4, 8)).toEqual(['· ·', '▅ ·', '█ ▅', '█ █']);
     const lowBand = bands[0];
     const highBand = bands[1];
     expect(lowBand).toBeDefined();
@@ -67,6 +72,16 @@ describe('equalizer controls', () => {
         3,
       ),
     ).toEqual(['· █', '· █']);
+  });
+
+  it('uses partial-height Unicode blocks for vertical EQ bars', () => {
+    const band = parseEqualizerBands(amixerOutput)[0];
+    expect(band).toBeDefined();
+    if (!band) return;
+    expect(equalizerVerticalCell({ ...band, value: 50 }, 4, 10)).toBe('··');
+    expect(equalizerVerticalCell({ ...band, value: 50 }, 5, 10)).toBe('██');
+    expect(equalizerVerticalCell({ ...band, value: 55 }, 4, 10)).toBe('▄▄');
+    expect(equalizerVerticalCell({ ...band, value: 100 }, 0, 10)).toBe('██');
   });
 
   it('compresses every configured band when the terminal column is narrower', () => {

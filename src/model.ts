@@ -12,7 +12,7 @@ export const profileSchema = z.object({
   channels: z.number().int().min(1).max(32),
   controlsPath: z.string().min(1),
   enabled: z.boolean(),
-  // Optional keeps configs created before the per-profile bypass setting valid.
+  // Optional keeps configs created before the per-profile EQ mode setting valid.
   eqEnabled: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

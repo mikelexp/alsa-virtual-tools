@@ -3,13 +3,13 @@ import React from 'react';
 import { render } from 'ink';
 import { getPaths } from './paths.js';
 import { systemRunner } from './runner.js';
-import { AlsatoolsService } from './service.js';
+import { ALSAChainService } from './service.js';
 import { checkDependencies } from './deps.js';
 import { renderBlock } from './asound.js';
 import { physicalStatus } from './alsa.js';
 import { App } from './ui.js';
 
-const service = new AlsatoolsService(getPaths(), systemRunner);
+const service = new ALSAChainService(getPaths(), systemRunner);
 const [command, target] = process.argv.slice(2);
 async function main(): Promise<void> {
   if (!command) {
@@ -72,6 +72,6 @@ async function main(): Promise<void> {
   throw new Error(`Unknown command: ${command}`);
 }
 main().catch((error: unknown) => {
-  console.error(`alsa-virtual-tools: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`alsachain: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });

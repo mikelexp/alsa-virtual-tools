@@ -15,9 +15,9 @@ afterEach(async () => {
 
 describe('Store', () => {
   it('creates the approved controls directory before validating ALSA config', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsachain-'));
     temporaryDirectories.push(home);
-    const configDir = path.join(home, '.config', 'alsa-virtual-tools');
+    const configDir = path.join(home, '.config', 'alsachain');
     const paths: Paths = {
       home,
       configDir,
@@ -26,7 +26,7 @@ describe('Store', () => {
       configFile: path.join(configDir, 'config.json'),
       controlsDir: path.join(configDir, 'controls'),
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      logFile: path.join(home, '.state', 'alsachain.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const config: Config = {
@@ -54,18 +54,18 @@ describe('Store', () => {
   });
 
   it('deletes only a regular controls file inside its managed directory', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsachain-'));
     temporaryDirectories.push(home);
-    const controlsDir = path.join(home, '.config', 'alsa-virtual-tools', 'controls');
+    const controlsDir = path.join(home, '.config', 'alsachain', 'controls');
     const paths: Paths = {
       home,
       configDir: path.dirname(controlsDir),
       stateDir: path.join(home, '.state'),
       cacheDir: path.join(home, '.cache'),
-      configFile: path.join(home, '.config', 'alsa-virtual-tools', 'config.json'),
+      configFile: path.join(home, '.config', 'alsachain', 'config.json'),
       controlsDir,
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      logFile: path.join(home, '.state', 'alsachain.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const controls = path.join(controlsDir, 'test_eq.bin');
@@ -76,9 +76,9 @@ describe('Store', () => {
   });
 
   it('rejects a persisted configuration whose profiles share EQ controls', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsachain-'));
     temporaryDirectories.push(home);
-    const configDir = path.join(home, '.config', 'alsa-virtual-tools');
+    const configDir = path.join(home, '.config', 'alsachain');
     const controlsDir = path.join(configDir, 'controls');
     const paths: Paths = {
       home,
@@ -88,7 +88,7 @@ describe('Store', () => {
       configFile: path.join(configDir, 'config.json'),
       controlsDir,
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      logFile: path.join(home, '.state', 'alsachain.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const sharedControls = path.join(controlsDir, 'shared.bin');
@@ -131,9 +131,9 @@ describe('Store', () => {
   });
 
   it('rejects distinct controls paths that are hard links to the same file', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'alsa-virtual-tools-'));
+    const home = await mkdtemp(path.join(os.tmpdir(), 'alsachain-'));
     temporaryDirectories.push(home);
-    const controlsDir = path.join(home, '.config', 'alsa-virtual-tools', 'controls');
+    const controlsDir = path.join(home, '.config', 'alsachain', 'controls');
     const paths: Paths = {
       home,
       configDir: path.dirname(controlsDir),
@@ -142,7 +142,7 @@ describe('Store', () => {
       configFile: path.join(path.dirname(controlsDir), 'config.json'),
       controlsDir,
       backupsDir: path.join(home, '.state', 'backups'),
-      logFile: path.join(home, '.state', 'alsa-virtual-tools.log'),
+      logFile: path.join(home, '.state', 'alsachain.log'),
       asoundrc: path.join(home, '.asoundrc'),
     };
     const firstControls = path.join(controlsDir, 'first.bin');

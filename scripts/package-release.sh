@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:?Usage: package-release.sh VERSION [ARCH]}"
 ARCH="${2:-x86_64}"
-APP_NAME="alsa-virtual-tools"
+APP_NAME="alsachain"
 DIST_DIR="${ROOT_DIR}/dist"
 RELEASE_DIR="${DIST_DIR}/release"
 TARBALL="${DIST_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz"

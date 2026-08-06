@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Profile } from '../src/model.js';
 import { getPaths } from '../src/paths.js';
 import type { CommandRunner } from '../src/runner.js';
-import { AlsatoolsService } from '../src/service.js';
+import { ALSAChainService } from '../src/service.js';
 
 const profile: Profile = {
   id: 'test_eq',
@@ -12,7 +12,7 @@ const profile: Profile = {
   ctlName: 'test_eq',
   target: 'plughw:CARD=TEST_DAC,DEV=0',
   channels: 2,
-  controlsPath: '/tmp/alsa-virtual-tools-test/controls/test_eq.bin',
+  controlsPath: '/tmp/alsachain-test/controls/test_eq.bin',
   enabled: true,
   eqEnabled: true,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -37,10 +37,7 @@ describe('equalizer service', () => {
         return { stdout: output, stderr: '', exitCode: 0 };
       },
     };
-    const service = new AlsatoolsService(
-      getPaths({ HOME: '/tmp/alsa-virtual-tools-test' }),
-      runner,
-    );
+    const service = new ALSAChainService(getPaths({ HOME: '/tmp/alsachain-test' }), runner);
 
     const bands = await service.equalizerBands(profile);
     const band = bands[0];
@@ -54,7 +51,7 @@ describe('equalizer service', () => {
     ]);
   });
 
-  it('rejects bypassed profiles and out-of-range values before writing', async () => {
+  it('rejects BITPERFECT profiles and out-of-range values before writing', async () => {
     let calls = 0;
     const runner: CommandRunner = {
       async run() {
@@ -62,10 +59,7 @@ describe('equalizer service', () => {
         return { stdout: output, stderr: '', exitCode: 0 };
       },
     };
-    const service = new AlsatoolsService(
-      getPaths({ HOME: '/tmp/alsa-virtual-tools-test' }),
-      runner,
-    );
+    const service = new ALSAChainService(getPaths({ HOME: '/tmp/alsachain-test' }), runner);
     await expect(service.equalizerBands({ ...profile, eqEnabled: false })).rejects.toThrow(
       'EQ is disabled',
     );

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT_DIR}/dist"
-OUT_FILE="${OUT_DIR}/alsa-virtual-tools"
+OUT_FILE="${OUT_DIR}/alsachain"
 
 command -v bun >/dev/null 2>&1 || {
   printf '%s\n' 'Bun is required. Install it from https://bun.sh' >&2

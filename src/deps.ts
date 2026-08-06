@@ -63,7 +63,7 @@ export async function checkDependencies(
   const dependencies: Dependency[] = [
     {
       name: 'Bun standalone / Node.js >= 22',
-      purpose: 'Run alsa-virtual-tools',
+      purpose: 'Run alsachain',
       ok: runtimeCompatible,
       detail: runtimeDetail,
     },

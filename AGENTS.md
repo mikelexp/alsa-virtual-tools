@@ -1,11 +1,11 @@
-# alsa-virtual-tools Contributor Notes
+# ALSAChain Contributor Notes
 
 ## Purpose
 
-`alsa-virtual-tools` is a Linux TUI/CLI for managing `alsaequal` virtual ALSA PCMs. It owns only:
+`alsachain` is a Linux TUI/CLI for managing `alsaequal` virtual ALSA PCMs. It owns only:
 
-- `~/.config/alsa-virtual-tools/`
-- the marked `ALSA-VIRTUAL-TOOLS` block in `~/.asoundrc`
+- `~/.config/alsachain/`
+- the marked `ALSACHAIN` block in `~/.asoundrc`
 
 It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, or unrelated user ALSA configuration.
 
@@ -27,7 +27,7 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 - `src/asound.ts`: the isolated generated block and external `type equal` detection.
 - `src/alsa.ts`: `aplay -l` parsing and non-invasive `/proc/asound` state reading.
 - `src/deps.ts`: executable/module/LADSPA validation and install suggestions only.
-- `src/service.ts`: application actions and detached QasMixer launch.
+- `src/service.ts`: application actions and integrated EQ CTL reads/writes.
 - `src/ui.tsx`: keyboard-only Ink UI.
 - `src/index.tsx`: TUI startup plus non-interactive CLI commands.
 
@@ -39,6 +39,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Use `#315BEF` for primary accents, borders, selections, and keyboard hints; reserve green, yellow, and red for semantic status or warnings.
 - Keep playback-device rows compact with no blank line between devices.
 - Text fields must behave like normal terminal inputs: support visible cursor placement, insertion, arrows, backspace, delete, Home/End, and predictable focus movement.
+- EQ graphs, both in the fullscreen editor and virtual-card list, use the eight partial-height Unicode blocks `▁▂▃▄▅▆▇█`. Preserve that shared visual scale instead of reverting to binary or coarse bars.
 
 ## ALSA Rules
 
@@ -61,7 +62,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 
 ## Integration Notes
 
-- Supported dependencies are `alsa-utils`, `caps`, `alsaequal`, and `qastools`/QasMixer.
+- Supported dependencies are `alsa-utils`, `caps`, and `alsaequal`.
 - A generated public PCM must be visible through `aplay -L` and its corresponding CTL must validate through `amixer`.
 - Sone support lives in `/opt/sone`, not this repository. Its `access-alsa-devices` branch enumerates ALSA PCM hints so it can list public virtual PCMs.
 

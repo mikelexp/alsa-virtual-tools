@@ -1,4 +1,4 @@
-APP_NAME := alsa-virtual-tools
+APP_NAME := alsachain
 VERSION := $(shell node -p "require('./package.json').version")
 ARCH := x86_64
 DIST_DIR := dist

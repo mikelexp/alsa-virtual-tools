@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "alsa-virtual-tools",
+      "name": "alsachain",
       "dependencies": {
         "execa": "^9.6.0",
         "ink": "^6.3.1",

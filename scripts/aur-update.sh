@@ -3,15 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:?Usage: aur-update.sh VERSION}"
-REPO_NAME="alsa-virtual-tools-bin"
+REPO_NAME="alsachain-bin"
 AUR_SSH="ssh://aur@aur.archlinux.org/${REPO_NAME}.git"
-ARCHIVE="alsa-virtual-tools-${VERSION}-linux-x86_64.tar.gz"
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/alsa-virtual-tools-aur.XXXXXX")"
+ARCHIVE="alsachain-${VERSION}-linux-x86_64.tar.gz"
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/alsachain-aur.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
 cd "${ROOT_DIR}"
 gh release download "v${VERSION}" \
-  --repo mikelexp/alsa-virtual-tools \
+  --repo mikelexp/alsachain \
   --pattern "${ARCHIVE}" \
   --dir "${WORK_DIR}" \
   --clobber
