@@ -53,6 +53,55 @@ describe('managed ALSA block', () => {
     expect(result).not.toContain('type equal');
     expect(result).not.toContain('ctl.usb_dac_eq');
   });
+  it('bypasses every stored DSP stage while BITPERFECT is active', () => {
+    const result = renderBlock(
+      [{ ...profile, bitperfect: true, crossfeed: 'normal' }],
+      '/usr/lib/ladspa/caps.so',
+    );
+    expect(result).toContain('type copy');
+    expect(result).not.toContain('type equal');
+    expect(result).not.toContain('type ladspa');
+  });
+  it('allows PROCESSED mode with no DSP stage configured', () => {
+    const result = renderBlock([{ ...profile, eqEnabled: false, bitperfect: false }], '/caps.so');
+    expect(result).toContain('type copy');
+    expect(result).toContain('ALSAChain PROCESSED: USB DAC');
+    expect(result).not.toContain('type equal');
+    expect(result).not.toContain('type ladspa');
+  });
+  it('chains bs2b crossfeed after EQ and preserves a public PCM hint', () => {
+    const result = renderBlock(
+      [{ ...profile, crossfeed: 'normal' }],
+      '/usr/lib/ladspa/caps.so',
+      '/usr/lib/ladspa/bs2b.so',
+    );
+    expect(result).toContain('pcm.usb_dac_eq_internal_crossfeed');
+    expect(result).toContain('type ladspa');
+    expect(result).toContain('label bs2b');
+    expect(result).toContain('controls [ 700 6 ]');
+    expect(result).toContain('slave.pcm "usb_dac_eq_internal_crossfeed"');
+    expect(result).toContain('ALSAChain EQ + Crossfeed: USB DAC');
+  });
+  it('supports crossfeed without EQ but rejects a missing bs2b plugin', () => {
+    const result = renderBlock(
+      [{ ...profile, eqEnabled: false, crossfeed: 'gentle' }],
+      '/usr/lib/ladspa/caps.so',
+      '/usr/lib/ladspa/bs2b.so',
+    );
+    expect(result).toContain('slave.pcm "plughw:CARD=TEST_DAC,DEV=0"');
+    expect(result).toContain('ALSAChain Crossfeed: USB DAC');
+    expect(() =>
+      renderBlock([{ ...profile, crossfeed: 'normal' }], '/usr/lib/ladspa/caps.so'),
+    ).toThrow('bs2b LADSPA plugin is unavailable');
+  });
+  it('renders validated custom crossfeed values', () => {
+    const result = renderBlock(
+      [{ ...profile, crossfeed: { cutoff: 925, feed: 5.5 } }],
+      '/usr/lib/ladspa/caps.so',
+      '/usr/lib/ladspa/bs2b.so',
+    );
+    expect(result).toContain('controls [ 925 5.5 ]');
+  });
   it('rejects malformed markers and detects external equal definitions', () => {
     expect(() => replaceManagedBlock('# BEGIN ALSACHAIN\n', 'x')).toThrow();
     expect(unmanagedEqualDefinitions('pcm.external { type equal\n }')).toEqual(['external']);

@@ -49,6 +49,7 @@ async function main(): Promise<void> {
       renderBlock(
         (await service.list()).filter((p) => p.enabled),
         report.capsPath ?? '',
+        report.crossfeedPath ?? '',
       ),
     );
     return;

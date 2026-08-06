@@ -48,7 +48,7 @@ describe('Store', () => {
         },
       ],
     };
-    await new Store(paths).applyAsoundrc(config, '/usr/lib/ladspa/caps.so', async () => true);
+    await new Store(paths).applyAsoundrc(config, '/usr/lib/ladspa/caps.so', '', async () => true);
     expect(await readFile(paths.asoundrc, 'utf8')).toContain('pcm.test_eq');
     expect((await stat(paths.controlsDir)).isDirectory()).toBe(true);
   });

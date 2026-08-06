@@ -2,6 +2,16 @@ import path from 'node:path';
 import { z } from 'zod';
 
 export const alsaName = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, 'Use a safe ALSA name');
+export const crossfeedPreset = z.enum(['gentle', 'normal', 'strong']);
+export type CrossfeedPreset = z.infer<typeof crossfeedPreset>;
+export const crossfeedCustom = z
+  .object({
+    cutoff: z.number().int().min(300).max(2000),
+    feed: z.number().min(1).max(15),
+  })
+  .strict();
+export const crossfeedSchema = z.union([crossfeedPreset, crossfeedCustom]);
+export type Crossfeed = z.infer<typeof crossfeedSchema>;
 export const profileSchema = z.object({
   id: alsaName,
   displayName: z.string().trim().min(1).max(100),
@@ -14,6 +24,10 @@ export const profileSchema = z.object({
   enabled: z.boolean(),
   // Optional keeps configs created before the per-profile EQ mode setting valid.
   eqEnabled: z.boolean().optional(),
+  // Optional keeps legacy EQ-only bypass profiles valid; new profiles store this explicitly.
+  bitperfect: z.boolean().optional(),
+  // Optional keeps existing profiles on an unprocessed path until crossfeed is selected.
+  crossfeed: crossfeedSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -21,6 +35,10 @@ export type Profile = z.infer<typeof profileSchema>;
 export const configSchema = z.object({ version: z.literal(1), profiles: z.array(profileSchema) });
 export type Config = z.infer<typeof configSchema>;
 export const emptyConfig = (): Config => ({ version: 1, profiles: [] });
+
+export function isBitperfect(profile: Profile): boolean {
+  return profile.bitperfect ?? (profile.eqEnabled === false && !profile.crossfeed);
+}
 
 export function assertUniqueProfiles(profiles: Profile[]): void {
   const pcmNames = profiles.flatMap((p) => [p.pcmName, p.internalPcmName]);

@@ -6,10 +6,20 @@ import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
 import { equalizerBarRows, type EqualizerBand } from './equalizer.js';
-import type { Profile } from './model.js';
+import { isBitperfect, type Crossfeed, type CrossfeedPreset, type Profile } from './model.js';
 import type { ALSAChainService } from './service.js';
 
-type Screen = 'list' | 'detail' | 'equalizer' | 'help' | 'diagnostics' | 'new' | 'edit' | 'delete';
+type Screen =
+  | 'list'
+  | 'detail'
+  | 'equalizer'
+  | 'crossfeed'
+  | 'crossfeed-custom'
+  | 'help'
+  | 'diagnostics'
+  | 'new'
+  | 'edit'
+  | 'delete';
 type Color =
   | 'green'
   | 'yellow'
@@ -58,7 +68,11 @@ export function App({ service, report }: { service: ALSAChainService; report: De
     height: stdout.rows ?? 24,
   });
   const [screen, setScreen] = useState<Screen>(
-    report.dependencies.every((dependency) => dependency.ok) ? 'list' : 'diagnostics',
+    report.dependencies
+      .filter((dependency) => dependency.required !== false)
+      .every((dependency) => dependency.ok)
+      ? 'list'
+      : 'diagnostics',
   );
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -70,7 +84,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
   const refreshEqualizers = async (sourceProfiles?: Profile[]) => {
     const candidates = sourceProfiles ?? (await service.list());
     const activeProfiles = candidates.filter(
-      (candidate) => candidate.enabled && candidate.eqEnabled !== false,
+      (candidate) => candidate.enabled && candidate.eqEnabled !== false && !isBitperfect(candidate),
     );
     const snapshots = await Promise.all(
       activeProfiles.map(async (candidate) => {
@@ -135,22 +149,58 @@ export function App({ service, report }: { service: ALSAChainService; report: De
         title: 'PROFILE IS DISABLED',
         message: 'Enable the profile before opening its equalizer controls.',
       });
-    } else if (selectedProfile.eqEnabled === false) {
-      setFeedback({
-        variant: 'warning',
-        title: 'BITPERFECT MODE',
-        message: 'Switch to EQ mode before opening its controls.',
-      });
-    } else setScreen('equalizer');
+    } else if (selectedProfile.eqEnabled !== false && !isBitperfect(selectedProfile)) {
+      setScreen('equalizer');
+    } else {
+      void service
+        .activateEqualizer(selectedProfile.id)
+        .then(async () => {
+          await refresh(true);
+          setScreen('equalizer');
+        })
+        .catch((error: Error) =>
+          setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
+        );
+    }
   };
 
-  const toggleEq = (profile: Profile) => {
+  const toggleBitperfect = (profile: Profile) => {
     void service
-      .setEqEnabled(profile.id, profile.eqEnabled === false)
+      .setBitperfect(profile.id, !isBitperfect(profile))
       .then(() => refresh(true))
       .catch((error: Error) =>
-        setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
+        setFeedback({
+          variant: 'error',
+          title: 'PLAYBACK MODE CHANGE FAILED',
+          message: error.message,
+        }),
       );
+  };
+
+  const openCrossfeed = (selectedProfile: Profile) => {
+    if (!selectedProfile.enabled) {
+      setFeedback({
+        variant: 'warning',
+        title: 'PROFILE IS DISABLED',
+        message: 'Enable the profile before configuring crossfeed.',
+      });
+    } else if (!isBitperfect(selectedProfile)) {
+      setScreen('crossfeed');
+    } else {
+      void service
+        .setBitperfect(selectedProfile.id, false)
+        .then(() => {
+          setScreen('crossfeed');
+          void refresh(true);
+        })
+        .catch((error: Error) =>
+          setFeedback({
+            variant: 'error',
+            title: 'PLAYBACK MODE CHANGE FAILED',
+            message: error.message,
+          }),
+        );
+    }
   };
 
   useInput((input, key) => {
@@ -169,14 +219,17 @@ export function App({ service, report }: { service: ALSAChainService; report: De
       if (input === 'd' && profiles[selection]) setScreen('delete');
       if (input === 'i') setScreen('diagnostics');
       if (input === 'm' && profiles[selection]) openEqualizer(profiles[selection]);
-      if (input === 'b' && profiles[selection]) toggleEq(profiles[selection]);
+      if (input === 'b' && profiles[selection]) toggleBitperfect(profiles[selection]);
+      if (input === 'c' && profiles[selection]) openCrossfeed(profiles[selection]);
     } else if (screen === 'detail') {
       if (key.escape) setScreen('list');
       if (input === 'e' && profile) setScreen('edit');
       if (input === 'm' && profile) openEqualizer(profile);
-      if (input === 'b' && profile) toggleEq(profile);
+      if (input === 'b' && profile) toggleBitperfect(profile);
+      if (input === 'c' && profile) openCrossfeed(profile);
       if (input === 'd' && profile) setScreen('delete');
-    } else if (screen !== 'equalizer' && key.escape) setScreen('list');
+    } else if (!['equalizer', 'crossfeed', 'crossfeed-custom'].includes(screen) && key.escape)
+      setScreen('list');
   });
 
   const profile = profiles[selection];
@@ -213,6 +266,12 @@ export function App({ service, report }: { service: ALSAChainService; report: De
             setScreen('list');
             void refreshEqualizers(profiles);
           }}
+          onRemove={() =>
+            service.setEqEnabled(profile.id, false).then(() => {
+              setScreen('list');
+              return refresh(true);
+            })
+          }
           onError={(message) =>
             setFeedback({ variant: 'error', title: 'EQ UPDATE FAILED', message })
           }
@@ -221,14 +280,56 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           }
         />
       )}
+      {screen === 'crossfeed' && profile && (
+        <CrossfeedScreen
+          profile={profile}
+          onSave={(preset) =>
+            service
+              .setCrossfeed(profile.id, preset)
+              .then(() => {
+                setScreen('list');
+                void refresh(true);
+              })
+              .catch((error: Error) =>
+                setFeedback({
+                  variant: 'error',
+                  title: 'CROSSFEED CHANGE FAILED',
+                  message: error.message,
+                }),
+              )
+          }
+          onCustom={() => setScreen('crossfeed-custom')}
+          onBack={() => setScreen('list')}
+        />
+      )}
+      {screen === 'crossfeed-custom' && profile && (
+        <CrossfeedCustomScreen
+          profile={profile}
+          onSave={(crossfeed) =>
+            service
+              .setCrossfeed(profile.id, crossfeed)
+              .then(() => {
+                setScreen('list');
+                void refresh(true);
+              })
+              .catch((error: Error) =>
+                setFeedback({
+                  variant: 'error',
+                  title: 'CROSSFEED CHANGE FAILED',
+                  message: error.message,
+                }),
+              )
+          }
+          onBack={() => setScreen('crossfeed')}
+        />
+      )}
       {screen === 'help' && <Help />}
       {screen === 'diagnostics' && <Diagnostics report={report} />}
       {screen === 'new' && (
         <NewProfile
           service={service}
           devices={devices}
-          onDone={(message) => {
-            setFeedback({ variant: 'success', title: 'PROFILE CREATED', message });
+          onDone={() => {
             setScreen('list');
             void refresh(true);
           }}
@@ -239,8 +340,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           service={service}
           devices={devices}
           existing={profile}
-          onDone={(message) => {
-            setFeedback({ variant: 'success', title: 'PROFILE UPDATED', message });
+          onDone={() => {
             setScreen('list');
             void refresh(true);
           }}
@@ -251,8 +351,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           service={service}
           profile={profile}
           width={Math.max(1, Math.min(72, terminalSize.width - 6))}
-          onDone={(message) => {
-            setFeedback({ variant: 'success', title: 'PROFILE REMOVED', message });
+          onDone={() => {
             setScreen('list');
             void refresh(true);
           }}
@@ -265,6 +364,10 @@ export function App({ service, report }: { service: ALSAChainService; report: De
         <DetailNavigation />
       ) : screen === 'equalizer' ? (
         <EqualizerNavigation />
+      ) : screen === 'crossfeed' ? (
+        <CrossfeedNavigation />
+      ) : screen === 'crossfeed-custom' ? (
+        <CrossfeedCustomNavigation />
       ) : (
         <Text color={MUTED}>esc back</Text>
       )}
@@ -319,7 +422,9 @@ function FeedbackModal({
 }
 
 function Header({ report }: { report: DependencyReport }) {
-  const healthy = report.dependencies.every((dependency) => dependency.ok);
+  const healthy = report.dependencies
+    .filter((dependency) => dependency.required !== false)
+    .every((dependency) => dependency.ok);
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box justifyContent="space-between">
@@ -393,7 +498,8 @@ function Navigation() {
         <KeyHint keyName="e" label="edit" />
         <KeyHint keyName="d" label="delete" />
         <KeyHint keyName="m" label="equalizer" />
-        <KeyHint keyName="b" label="switch EQ / BITPERFECT" />
+        <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
+        <KeyHint keyName="c" label="crossfeed" />
       </Box>
       <Box gap={2} flexWrap="wrap">
         <KeyHint keyName="r" label="refresh" />
@@ -410,8 +516,10 @@ function DetailNavigation() {
     <Box marginTop={1} gap={2} flexWrap="wrap">
       <KeyHint keyName="e" label="edit interface" />
       <KeyHint keyName="m" label="equalizer" />
-      <KeyHint keyName="b" label="switch EQ / BITPERFECT" />
+      <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
+      <KeyHint keyName="c" label="crossfeed" />
       <KeyHint keyName="d" label="delete interface" />
+      <KeyHint keyName="x" label="remove EQ" />
       <KeyHint keyName="esc" label="back" />
     </Box>
   );
@@ -424,6 +532,226 @@ function EqualizerNavigation() {
       <KeyHint keyName="↑ / ↓" label="adjust" />
       <KeyHint keyName="shift" label="step 5" />
       <KeyHint keyName="r" label="reload" />
+      <KeyHint keyName="esc" label="back" />
+    </Box>
+  );
+}
+
+const crossfeedChoices: {
+  value?: CrossfeedPreset;
+  custom?: true;
+  label: string;
+  detail: string;
+}[] = [
+  { label: 'Remove crossfeed', detail: 'Remove this DSP stage from the profile.' },
+  { value: 'gentle', label: 'Gentle', detail: '700 Hz / 4.5 dB · the bs2b default.' },
+  { value: 'normal', label: 'Normal', detail: '700 Hz / 6 dB · Chu Moy-style crossfeed.' },
+  { value: 'strong', label: 'Strong', detail: '650 Hz / 9.5 dB · Jan Meier-style crossfeed.' },
+  { custom: true, label: 'Custom', detail: 'Choose the cutoff frequency and crossfeed level.' },
+];
+
+function CrossfeedScreen({
+  profile,
+  onSave,
+  onCustom,
+  onBack,
+}: {
+  profile: Profile;
+  onSave: (preset?: Crossfeed) => void;
+  onCustom: () => void;
+  onBack: () => void;
+}) {
+  const initial = Math.max(
+    0,
+    crossfeedChoices.findIndex(
+      (choice) =>
+        choice.value === profile.crossfeed ||
+        (choice.custom && typeof profile.crossfeed !== 'string'),
+    ),
+  );
+  const [selection, setSelection] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  useInput((input, key) => {
+    if (busy) return;
+    if (key.escape) onBack();
+    if (key.upArrow) setSelection((current) => Math.max(0, current - 1));
+    if (key.downArrow)
+      setSelection((current) => Math.min(crossfeedChoices.length - 1, current + 1));
+    if (key.return) {
+      setBusy(true);
+      if (crossfeedChoices[selection]?.custom) onCustom();
+      else onSave(crossfeedChoices[selection]?.value);
+    }
+  });
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title="HEADPHONE CROSSFEED" color={ACCENT}>
+        <Box flexDirection="column" paddingY={1} gap={1}>
+          <Text color={TEXT}>
+            Mixes a small, delayed part of each channel into the other to make headphones feel less
+            hard-panned. It is DSP and is never bit-perfect.
+          </Text>
+          <Text color={MUTED}>Choose the lowest strength that feels natural for this profile.</Text>
+        </Box>
+      </Panel>
+      <Panel title={profile.displayName.toUpperCase()} color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          {crossfeedChoices.map((choice, index) => (
+            <Box
+              key={choice.label}
+              flexDirection="column"
+              marginBottom={index === selection ? 1 : 0}
+            >
+              <Text color={index === selection ? ACCENT_BRIGHT : TEXT} bold={index === selection}>
+                {index === selection ? '> ' : '  '}
+                {choice.label}
+              </Text>
+              {index === selection && <Text color={MUTED}> {choice.detail}</Text>}
+            </Box>
+          ))}
+        </Box>
+      </Panel>
+      <Text color={MUTED}>
+        Requires the optional bs2b LADSPA plugin when enabling crossfeed. The EQ stage is kept
+        before crossfeed.
+      </Text>
+    </Box>
+  );
+}
+
+function CrossfeedCustomScreen({
+  profile,
+  onSave,
+  onBack,
+}: {
+  profile: Profile;
+  onSave: (crossfeed: Crossfeed) => void;
+  onBack: () => void;
+}) {
+  const existing = typeof profile.crossfeed === 'object' ? profile.crossfeed : undefined;
+  const [cutoff, setCutoff] = useState(String(existing?.cutoff ?? 700));
+  const [feed, setFeed] = useState(String(existing?.feed ?? 4.5));
+  const [field, setField] = useState(0);
+  const [cursor, setCursor] = useState(0);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useInput((input, key) => {
+    if (busy) return;
+    const value = field === 0 ? cutoff : feed;
+    const setValue = field === 0 ? setCutoff : setFeed;
+    const editing = field < 2;
+    const backspace = key.backspace || input === '\b' || input === '\x7f';
+    if (key.escape) onBack();
+    else if (key.tab) {
+      const next = (field + (key.shift ? -1 : 1) + 3) % 3;
+      setField(next);
+      setCursor(next === 0 ? cutoff.length : next === 1 ? feed.length : 0);
+    } else if (key.ctrl && input === 'a' && editing) setCursor(0);
+    else if (key.ctrl && input === 'e' && editing) setCursor(value.length);
+    else if (key.ctrl && input === 'u' && editing) {
+      setValue('');
+      setCursor(0);
+    } else if (key.leftArrow && editing) setCursor((position) => Math.max(0, position - 1));
+    else if (key.rightArrow && editing)
+      setCursor((position) => Math.min(value.length, position + 1));
+    else if (key.home && editing) setCursor(0);
+    else if (key.end && editing) setCursor(value.length);
+    else if (backspace && editing && cursor > 0) {
+      const nextCursor = cursor - 1;
+      setValue((current) => current.slice(0, nextCursor) + current.slice(cursor));
+      setCursor(nextCursor);
+    } else if (key.delete && editing) {
+      setValue((current) => current.slice(0, cursor) + current.slice(cursor + 1));
+    } else if (key.upArrow && editing) {
+      const step = field === 0 ? 25 : 0.5;
+      setValue(String(Number(value || 0) + step));
+    } else if (key.downArrow && editing) {
+      const step = field === 0 ? 25 : 0.5;
+      setValue(String(Number(value || 0) - step));
+    } else if (key.return && field < 2) {
+      const next = field + 1;
+      setField(next);
+      setCursor(next === 1 ? feed.length : 0);
+    } else if (key.return) {
+      const settings = { cutoff: Number(cutoff), feed: Number(feed) };
+      if (!Number.isInteger(settings.cutoff) || settings.cutoff < 300 || settings.cutoff > 2000)
+        return setError('Cutoff must be a whole number from 300 to 2000 Hz');
+      if (!Number.isFinite(settings.feed) || settings.feed < 1 || settings.feed > 15)
+        return setError('Level must be from 1 to 15 dB');
+      setBusy(true);
+      onSave(settings);
+    } else if (input && !key.ctrl && !key.meta && editing && /^[0-9.]$/.test(input)) {
+      if (input !== '.' || !value.includes('.')) {
+        setValue((current) => current.slice(0, cursor) + input + current.slice(cursor));
+        setCursor((position) => position + 1);
+      }
+    }
+  });
+  const fieldRow = (label: string, value: string, index: number, suffix: string) => (
+    <Box>
+      <Text color={field === index ? ACCENT : 'gray'} bold>
+        {field === index ? '> ' : '  '}
+      </Text>
+      <Text color={field === index ? 'white' : undefined}>{label.padEnd(12)}</Text>
+      {field === index ? (
+        <Text color="white">
+          {value.slice(0, cursor)}
+          <Text inverse color={ACCENT_BRIGHT}>
+            {value[cursor] ?? ' '}
+          </Text>
+          {value.slice(cursor + 1)}
+        </Text>
+      ) : (
+        <Text>{value}</Text>
+      )}
+      <Text color={MUTED}> {suffix}</Text>
+    </Box>
+  );
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title="CUSTOM CROSSFEED" color={ACCENT}>
+        <Box flexDirection="column" paddingY={1}>
+          {fieldRow('Cutoff', cutoff, 0, 'Hz · 300–2000')}
+          {fieldRow('Level', feed, 1, 'dB · 1–15')}
+        </Box>
+      </Panel>
+      <Panel title="TUNING GUIDE" color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          <Text color={TEXT}>
+            Start at 700 Hz and 4.5 dB. Increase level gradually; use the lowest natural setting.
+          </Text>
+          <Text color={MUTED}>
+            Up/down adjust in 25 Hz or 0.5 dB steps. Values are validated before applying.
+          </Text>
+        </Box>
+      </Panel>
+      <Box backgroundColor={field === 2 ? '#203b2c' : SURFACE} paddingX={2} paddingY={1}>
+        <Text color={field === 2 ? 'green' : 'gray'} bold>
+          {field === 2 ? '> ' : '  '}
+        </Text>
+        <Text color={field === 2 ? 'green' : undefined}>[ Apply custom crossfeed ]</Text>
+      </Box>
+      {error && <Text color="red">! {error}</Text>}
+    </Box>
+  );
+}
+
+function CrossfeedNavigation() {
+  return (
+    <Box marginTop={1} gap={2} flexWrap="wrap">
+      <KeyHint keyName="↑ / ↓" label="choose strength" />
+      <KeyHint keyName="enter" label="apply" />
+      <KeyHint keyName="esc" label="cancel" />
+    </Box>
+  );
+}
+
+function CrossfeedCustomNavigation() {
+  return (
+    <Box marginTop={1} gap={2} flexWrap="wrap">
+      <KeyHint keyName="tab" label="next field" />
+      <KeyHint keyName="↑ / ↓" label="adjust value" />
+      <KeyHint keyName="enter" label="next / apply" />
       <KeyHint keyName="esc" label="back" />
     </Box>
   );
@@ -539,7 +867,7 @@ function ProfileRow({
           </Text>
         </Box>
       </Box>
-      {profile.enabled && profile.eqEnabled !== false && (
+      {profile.enabled && profile.eqEnabled !== false && !isBitperfect(profile) && (
         <ProfileEqualizer bands={equalizer} width={equalizerWidth} selected={selected} />
       )}
       <Box
@@ -552,8 +880,18 @@ function ProfileRow({
         {!profile.enabled && <Badge label="OFF" color="gray" />}
         {profile.enabled && (
           <Badge
-            label={profile.eqEnabled === false ? 'BITPERFECT' : 'EQ'}
-            color={profile.eqEnabled === false ? 'green' : 'yellow'}
+            label={
+              isBitperfect(profile)
+                ? 'BITPERFECT'
+                : profile.crossfeed
+                  ? profile.eqEnabled === false
+                    ? 'XFEED'
+                    : 'EQ + XFEED'
+                  : profile.eqEnabled === false
+                    ? 'PROCESSED'
+                    : 'EQ'
+            }
+            color={isBitperfect(profile) ? 'green' : 'yellow'}
           />
         )}
         {status && <Badge label={status.toUpperCase()} color={statusColor(state?.state, status)} />}
@@ -617,9 +955,17 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
           <InfoRow
             label="Processing"
             value={
-              profile.eqEnabled === false ? 'BITPERFECT - direct path' : 'EQ - alsaequal active'
+              isBitperfect(profile)
+                ? 'BITPERFECT - direct path'
+                : profile.eqEnabled === false
+                  ? profile.crossfeed
+                    ? `CROSSFEED - ${profile.crossfeed} / DSP active`
+                    : 'PROCESSED - no DSP stage configured'
+                  : profile.crossfeed
+                    ? `EQ + CROSSFEED - ${profile.crossfeed} / DSP active`
+                    : 'EQ - alsaequal active'
             }
-            valueColor={profile.eqEnabled === false ? 'green' : 'yellow'}
+            valueColor={isBitperfect(profile) ? 'green' : 'yellow'}
           />
         </Box>
       </Panel>
@@ -628,7 +974,8 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
           <InfoRow label="Controls" value={profile.controlsPath} />
           <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
           <Text color={MUTED}>
-            b switches EQ / BITPERFECT; restart playback after changing mode.
+            b switches BITPERFECT / PROCESSED; m and c activate processed mode. Restart playback
+            after changes.
           </Text>
         </Box>
       </Panel>
@@ -689,7 +1036,11 @@ function Help() {
           <Text color={ACCENT} bold>
             b
           </Text>{' '}
-          switch EQ / BITPERFECT{' '}
+          switch BITPERFECT / PROCESSED{' '}
+          <Text color={ACCENT} bold>
+            c
+          </Text>{' '}
+          crossfeed{' '}
           <Text color={ACCENT} bold>
             r
           </Text>{' '}
@@ -715,7 +1066,9 @@ function Help() {
 }
 
 function Diagnostics({ report }: { report: DependencyReport }) {
-  const healthy = report.dependencies.every((dependency) => dependency.ok);
+  const healthy = report.dependencies
+    .filter((dependency) => dependency.required !== false)
+    .every((dependency) => dependency.ok);
   return (
     <Box flexDirection="column" gap={1}>
       <Panel
@@ -725,8 +1078,11 @@ function Diagnostics({ report }: { report: DependencyReport }) {
         <Box flexDirection="column" paddingY={1}>
           {report.dependencies.map((dependency) => (
             <Box key={dependency.name}>
-              <Text color={dependency.ok ? 'green' : 'red'} bold>
-                {dependency.ok ? '[OK]  ' : '[FAIL]'}
+              <Text
+                color={dependency.ok ? 'green' : dependency.required === false ? 'gray' : 'red'}
+                bold
+              >
+                {dependency.ok ? '[OK]  ' : dependency.required === false ? '[OPT] ' : '[FAIL]'}
               </Text>
               <Text bold>{dependency.name.padEnd(14)}</Text>
               <Text color={MUTED}> {dependency.detail || dependency.purpose}</Text>
@@ -762,7 +1118,7 @@ function NewProfile({
   service: ALSAChainService;
   devices: Device[];
   existing?: Profile;
-  onDone: (message: string) => void;
+  onDone: () => void;
 }) {
   const [id, setId] = useState(existing?.id ?? '');
   const [displayName, setDisplayName] = useState(existing?.displayName ?? '');
@@ -840,7 +1196,13 @@ function NewProfile({
             channels: 2,
           });
           const profile = existing
-            ? { ...generatedProfile, createdAt: existing.createdAt }
+            ? {
+                ...generatedProfile,
+                createdAt: existing.createdAt,
+                eqEnabled: existing.eqEnabled,
+                bitperfect: existing.bitperfect,
+                crossfeed: existing.crossfeed,
+              }
             : generatedProfile;
           const existingIndex = existing
             ? config.profiles.findIndex((candidate) => candidate.id === existing.id)
@@ -857,11 +1219,7 @@ function NewProfile({
           else config.profiles.push(profile);
           await service.applyConfig(config);
           await service.store.save(config);
-          onDone(
-            existing
-              ? 'Profile updated. Restart playback to reopen the virtual PCM.'
-              : `Profile ${profile.pcmName} created and ready to use.`,
-          );
+          onDone();
         } catch (error) {
           setError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -963,7 +1321,7 @@ function DeleteProfile({
   service: ALSAChainService;
   profile: Profile;
   width: number;
-  onDone: (message: string) => void;
+  onDone: () => void;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -980,11 +1338,7 @@ function DeleteProfile({
         await service.applyConfig(next);
         await service.store.save(next);
         if (deleteControls) await service.store.deleteControlsFile(profile.controlsPath);
-        onDone(
-          deleteControls
-            ? `Removed ${profile.pcmName} and its controls file`
-            : `Removed ${profile.pcmName}; controls file kept`,
-        );
+        onDone();
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       } finally {

@@ -17,6 +17,7 @@ export function EqualizerScreen({
   height,
   active,
   onBack,
+  onRemove,
   onError,
   onBandsChange,
 }: {
@@ -26,6 +27,7 @@ export function EqualizerScreen({
   height: number;
   active: boolean;
   onBack: () => void;
+  onRemove: () => Promise<void>;
   onError: (message: string) => void;
   onBandsChange: (bands: EqualizerBand[]) => void;
 }) {
@@ -87,6 +89,20 @@ export function EqualizerScreen({
       });
   };
 
+  const removeEqualizer = () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    void onRemove()
+      .catch((removeError: unknown) =>
+        onError(removeError instanceof Error ? removeError.message : String(removeError)),
+      )
+      .finally(() => {
+        savingRef.current = false;
+        setSaving(false);
+      });
+  };
+
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -95,6 +111,10 @@ export function EqualizerScreen({
       }
       if (input === 'r') {
         if (!savingRef.current) void load();
+        return;
+      }
+      if (input === 'x' && !loading && !savingRef.current) {
+        removeEqualizer();
         return;
       }
       if (loading || error || savingRef.current || bands.length === 0) return;
@@ -173,6 +193,7 @@ export function EqualizerScreen({
           <Text color={MUTED}>changes apply to the active EQ immediately</Text>
         </Box>
       )}
+      <Text color={MUTED}>x removes EQ from this profile · esc back</Text>
     </Box>
   );
 }

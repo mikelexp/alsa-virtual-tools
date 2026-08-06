@@ -13,6 +13,10 @@ The release binary includes its JavaScript runtime and npm dependencies. It does
 not include system ALSA components, which remain package dependencies:
 `alsa-utils`, `caps`, and `alsaequal`.
 
+Headphone crossfeed is optional. Install `ladspa-bs2b` from the AUR when you
+want to enable it; ALSAChain reports it separately and does not treat its
+absence as a system failure.
+
 To install a release manually, download the tarball from GitHub Releases, extract
 it, and run:
 
@@ -85,13 +89,24 @@ In the TUI, select an EQ-enabled profile and press `m` to open the integrated
 graphic equalizer. Its bands, labels, ranges, and current values are discovered
 from the profile's ALSA CTL. Use left/right to select a band and up/down to
 adjust both channels. Changes apply immediately to active equalized playback.
+Press `c` on any stereo profile to configure headphone crossfeed. Choose Off,
+Gentle, Normal, Strong, or Custom. Custom exposes a 300–2000 Hz cutoff and a
+1–15 dB crossfeed level, validated before writing the configuration. ALSAChain
+regenerates the virtual PCM and playback must be restarted for the new chain to
+be opened.
 
 ## Generated configuration
 
-In the TUI, select a profile and press `b` to switch between **EQ** and
-**BITPERFECT**. EQ uses the `alsaequal` PCM/CTL layer. BITPERFECT keeps the
-public PCM and physical target but removes that DSP layer, leaving a direct
-hardware path. Stop and restart playback after changing the mode.
+In the TUI, select a profile and press `b` to switch between **PROCESSED** and
+**BITPERFECT**. Processed mode restores the profile's enabled DSP stages, such
+as EQ and crossfeed. BITPERFECT keeps the public PCM and physical target but
+bypasses every DSP stage, leaving a direct hardware path. Opening the EQ (`m`)
+or crossfeed (`c`) controls automatically returns the profile to Processed
+mode. Stop and restart playback after changing the mode.
+
+Crossfeed may be used with or without EQ. When both are active, the chain is
+`EQ -> bs2b crossfeed -> public PCM`; the EQ CTL continues to expose only the
+Eq10 controls. Crossfeed is DSP and therefore is never bit-perfect.
 
 ```text
 ctl.dac_eq {

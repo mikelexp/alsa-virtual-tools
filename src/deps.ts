@@ -7,10 +7,12 @@ export interface Dependency {
   purpose: string;
   ok: boolean;
   detail: string;
+  required?: boolean;
 }
 export interface DependencyReport {
   dependencies: Dependency[];
   capsPath?: string;
+  crossfeedPath?: string;
   ladspaPath: string;
   installCommands: string[];
 }
@@ -38,6 +40,13 @@ export async function checkDependencies(
     })),
   );
   const capsPath = capsCandidates.find((candidate) => candidate.ok)?.file;
+  const crossfeedCandidates = await Promise.all(
+    ladspaPaths.map(async (dir) => ({
+      file: path.join(dir, 'bs2b.so'),
+      ok: await exists(path.join(dir, 'bs2b.so')),
+    })),
+  );
+  const crossfeedPath = crossfeedCandidates.find((candidate) => candidate.ok)?.file;
   const commands = await Promise.all(
     ['aplay', 'amixer'].map(async (name) => [name, await executable(runner, name)] as const),
   );
@@ -97,6 +106,13 @@ export async function checkDependencies(
       ok: ladspaPaths.some((p) => p === '/usr/lib/ladspa') && Boolean(capsPath),
       detail: ladspaPaths.join(':'),
     },
+    {
+      name: 'bs2b LADSPA crossfeed',
+      purpose: 'Optional headphone crossfeed stage',
+      ok: Boolean(crossfeedPath),
+      detail: crossfeedPath ?? 'Optional; install ladspa-bs2b to enable crossfeed',
+      required: false,
+    },
   ];
   const helper = (
     await Promise.all(['paru', 'yay'].map(async (x) => [x, await executable(runner, x)] as const))
@@ -105,6 +121,11 @@ export async function checkDependencies(
     dependencies,
     capsPath,
     ladspaPath: ladspaPaths.join(':'),
-    installCommands: [`sudo pacman -S alsa-utils caps`, `${helper ?? '<AUR-helper>'} -S alsaequal`],
+    crossfeedPath,
+    installCommands: [
+      `sudo pacman -S alsa-utils caps`,
+      `${helper ?? '<AUR-helper>'} -S alsaequal`,
+      `${helper ?? '<AUR-helper>'} -S ladspa-bs2b`,
+    ],
   };
 }

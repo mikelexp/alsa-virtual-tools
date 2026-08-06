@@ -84,6 +84,7 @@ export class Store {
   async applyAsoundrc(
     config: Config,
     capsPath: string,
+    crossfeedPath: string,
     validate: () => Promise<boolean>,
   ): Promise<void> {
     await this.assertControlsIsolation(config.profiles);
@@ -106,7 +107,7 @@ export class Store {
     try {
       await atomicWrite(
         target,
-        replaceManagedBlock(original, renderBlock(config.profiles, capsPath)),
+        replaceManagedBlock(original, renderBlock(config.profiles, capsPath, crossfeedPath)),
       );
       if (!(await validate())) throw new Error('Generated ALSA configuration did not validate');
       await this.pruneBackups();

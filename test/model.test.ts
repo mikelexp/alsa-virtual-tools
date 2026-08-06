@@ -52,4 +52,31 @@ describe('profile validation', () => {
       'Profiles must use separate controls files',
     );
   });
+
+  it('accepts only the supported crossfeed strengths', async () => {
+    const { profileSchema } = await import('../src/model.js');
+    const profile = {
+      id: 'headphones',
+      pcmName: 'headphones',
+      internalPcmName: 'headphones_internal',
+      ctlName: 'headphones',
+      displayName: 'Headphones',
+      target: 'plughw:CARD=TEST_DAC,DEV=0',
+      channels: 2,
+      controlsPath: '/tmp/headphones.bin',
+      enabled: true,
+      eqEnabled: true,
+      crossfeed: 'normal',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    expect(profileSchema.safeParse(profile).success).toBe(true);
+    expect(profileSchema.safeParse({ ...profile, crossfeed: 'max' }).success).toBe(false);
+    expect(
+      profileSchema.safeParse({ ...profile, crossfeed: { cutoff: 925, feed: 5.5 } }).success,
+    ).toBe(true);
+    expect(
+      profileSchema.safeParse({ ...profile, crossfeed: { cutoff: 250, feed: 5.5 } }).success,
+    ).toBe(false);
+  });
 });

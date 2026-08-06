@@ -40,6 +40,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Keep playback-device rows compact with no blank line between devices.
 - Text fields must behave like normal terminal inputs: support visible cursor placement, insertion, arrows, backspace, delete, Home/End, and predictable focus movement.
 - EQ graphs, both in the fullscreen editor and virtual-card list, use the eight partial-height Unicode blocks `▁▂▃▄▅▆▇█`. Preserve that shared visual scale instead of reverting to binary or coarse bars.
+- Do not show success-confirmation modals for normal in-place settings changes, including crossfeed; return to the relevant screen and reflect the new state. Reserve modals for errors, destructive actions, or information that needs acknowledgement.
 
 ## ALSA Rules
 

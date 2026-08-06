@@ -29,6 +29,22 @@ const output = `Simple mixer control '00. 31 Hz',0
 `;
 
 describe('equalizer service', () => {
+  it('creates new profiles in BITPERFECT mode with no DSP stage enabled', () => {
+    const service = new ALSAChainService(getPaths({ HOME: '/tmp/alsachain-test' }), {
+      async run() {
+        return { stdout: '', stderr: '', exitCode: 0 };
+      },
+    });
+    const profile = service.createProfile({
+      id: 'new_profile',
+      displayName: 'New profile',
+      target: 'plughw:CARD=TEST_DAC,DEV=0',
+      channels: 2,
+    });
+    expect(profile.bitperfect).toBe(true);
+    expect(profile.eqEnabled).toBe(false);
+  });
+
   it('reads and writes the profile CTL through the command runner', async () => {
     const calls: { file: string; args: string[] }[] = [];
     const runner: CommandRunner = {
@@ -61,7 +77,7 @@ describe('equalizer service', () => {
     };
     const service = new ALSAChainService(getPaths({ HOME: '/tmp/alsachain-test' }), runner);
     await expect(service.equalizerBands({ ...profile, eqEnabled: false })).rejects.toThrow(
-      'EQ is disabled',
+      'BITPERFECT is active',
     );
     await expect(
       service.setEqualizerBand(
