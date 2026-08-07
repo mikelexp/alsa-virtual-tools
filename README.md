@@ -97,9 +97,23 @@ and current values are always discovered from the ALSA CTL rather than assumed.
 
 In the TUI, select a profile and press `b` to switch between **PROCESSED** and
 **BITPERFECT**. Processed mode renders its stored DSP stages in their configured
-order. BITPERFECT keeps the public PCM and physical target but bypasses every
-stage, leaving a direct hardware path. Adding a stage returns the profile to
-Processed mode. Stop and restart playback after changing a chain.
+order. BITPERFECT bypasses every stage and routes the public PCM through `plug`
+and the stable `plughw:CARD=...,DEV=...` target, so ALSA clients can negotiate
+the physical device's supported format, rate, and channel layout. Adding a
+stage returns the profile to Processed mode. Stop and restart playback after
+changing a chain.
+
+The profile list reports the active mode on the right:
+
+- **PROCESSED**: one or more DSP stages are active; their ordered names appear
+  under `stages`.
+- **BITPERFECT**: no DSP stage is active and the profile channel count matches
+  the physical PCM. Format and rate must also match for strict bit-perfect
+  playback; ALSA's physical status cannot prove the source parameters.
+- **EFFECTIVE BITPERFECT**: a stereo profile targets a PCM with a different
+  physical channel count. ALSA preserves the audible stereo channels and pads
+  the physical stream's unused channels. It is effective bit-perfect for the
+  stereo output, but not strict bit-perfectness for the complete stream.
 
 Crossfeed may be used with or without EQ, in either order. Crossfeed is DSP and
 therefore is never bit-perfect.
