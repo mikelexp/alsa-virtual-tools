@@ -37,6 +37,11 @@ The dependency check locates `caps.so`, checks command executables, verifies
 that the conventional equal PCM/CTL modules have no unresolved `libasound`
 symbols, and checks the ALSAChain PCM status module.
 
+The released status module is compiled from `native/alsachain-status.c` and is
+included in the same archive as the standalone executable. It is installed by
+the AUR package or by `install.sh`; it is not a kernel module and does not need
+DKMS or `modprobe`.
+
 After upgrading from a version without the status module, regenerate the managed
 block and restart any player that already has a profile open:
 
@@ -94,7 +99,9 @@ sudo make install-native
 pnpm start
 ```
 
-`make build-native` requires the ALSA development headers and `pkg-config`.
+`make build-native` requires the ALSA development headers and `pkg-config`
+(`libasound2-dev` and `pkg-config` on Ubuntu/Debian). The native smoke test
+also requires `alsa-utils` because it invokes `aplay` against the `null` PCM.
 `sudo make install-native` installs only
 `libasound_module_pcm_alsachain_status.so` into `/usr/lib/alsa-lib/`; it does
 not change ALSA configuration. Run `./run.sh repair` after installing it to
@@ -118,6 +125,15 @@ created by pushing a tag that matches the package version:
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+The release workflow installs the native ALSA build dependencies, runs
+`make check`, builds the standalone executable and status module, and uploads:
+
+- `alsachain-0.1.0-linux-x86_64.tar.gz`
+- `SHA256SUMS`
+
+The current release is available at
+<https://github.com/mikelexp/alsachain/releases/tag/v0.1.0>.
 
 The AUR package is maintained separately as `alsachain-bin`. After a
 GitHub Release exists, update it with:

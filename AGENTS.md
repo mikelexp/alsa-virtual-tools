@@ -19,6 +19,8 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 - Build the native module: `make build-native`
 - Install the native module for local hardware use: `sudo make install-native`
 - Verify changes: `make check` (includes format, lint, tests, TypeScript, and the native null-PCM smoke test)
+- Build a release: `make release` (runs checks, compiles the standalone Bun binary and ALSA module, and creates the tarball under `dist/`)
+- Publish a release: push a `vX.Y.Z` tag; `.github/workflows/release.yml` builds on Ubuntu and uploads the tarball plus `SHA256SUMS` to GitHub Releases.
 
 `pnpm-workspace.yaml` explicitly allows the local `esbuild` postinstall needed by Vitest and tsx.
 
@@ -60,6 +62,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - The wrapper's `status_path` must remain inside `Paths.playbackStatusDir`, and its `slave_name` must refer to a generated private `*_status_target` PCM. Applications must only enumerate/select the public PCM with its ALSA `hint`.
 - The module writes a PID-bound record under `playbackStatusDir`; stale records are cleaned only after checking that their owning PID has exited. Do not delete live records or read status by opening a PCM.
 - The native plugin is userspace code installed at `/usr/lib/alsa-lib/libasound_module_pcm_alsachain_status.so`, never a kernel module. Keep `PKGBUILD`, release packaging, `scripts/install.sh`, dependency diagnostics, and README installation instructions synchronized when changing it.
+- Native builds require `alsa-lib` development headers and `pkg-config`; the release CI additionally installs `alsa-utils` for the null-PCM smoke test.
 - Validate a generated CTL with `amixer -D <ctl> scontrols`; do not open a physical PCM merely to probe it.
 - `alsaequal` is DSP, so it is never bit-perfect. Physical `hw_params` alone do not reveal source bit depth or native sample rate.
 - Gain is DSP, rendered with an ALSA `route` PCM using a per-channel diagonal matrix. Positive values amplify and can clip; negative values provide headroom.
