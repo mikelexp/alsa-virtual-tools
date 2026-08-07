@@ -266,6 +266,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           devices={devices}
           equalizers={equalizers}
           width={terminalSize.width}
+          height={terminalSize.height}
         />
       )}
       {screen === 'detail' && profile && <Details profile={profile} state={states[profile.id]} />}
@@ -845,6 +846,7 @@ function List({
   devices,
   equalizers,
   width,
+  height,
 }: {
   profiles: Profile[];
   selection: number;
@@ -852,7 +854,15 @@ function List({
   devices: Device[];
   equalizers: Record<string, EqualizerBand[]>;
   width: number;
+  height: number;
 }) {
+  // Reserve the application chrome and navigation so every rendered row fits the viewport.
+  const visibleCount = Math.max(1, Math.floor((height - 10) / 6));
+  const start = Math.max(
+    0,
+    Math.min(selection - Math.floor(visibleCount / 2), Math.max(0, profiles.length - visibleCount)),
+  );
+  const visibleProfiles = profiles.slice(start, start + visibleCount);
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
@@ -862,6 +872,8 @@ function List({
         <Text color={MUTED}>
           {' '}
           {profiles.length} managed interface{profiles.length === 1 ? '' : 's'}
+          {visibleProfiles.length < profiles.length &&
+            ` (${start + 1}-${start + visibleProfiles.length} shown)`}
         </Text>
       </Box>
       {profiles.length === 0 ? (
@@ -873,7 +885,8 @@ function List({
         </Panel>
       ) : (
         <Box flexDirection="column">
-          {profiles.map((profile, index) => {
+          {visibleProfiles.map((profile, index) => {
+            const profileIndex = start + index;
             const device = devices.find((candidate) => candidate.target === profile.target);
             const state = states[profile.id];
             const status = statusLabel(state, device);
@@ -884,11 +897,11 @@ function List({
                   state={state}
                   device={device}
                   status={status}
-                  selected={index === selection}
+                  selected={profileIndex === selection}
                   equalizer={equalizers[profile.id]}
                   width={width}
                 />
-                {index < profiles.length - 1 && <Box height={1} />}
+                {index < visibleProfiles.length - 1 && <Box height={1} />}
               </React.Fragment>
             );
           })}
