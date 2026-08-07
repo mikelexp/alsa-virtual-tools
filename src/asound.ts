@@ -52,9 +52,8 @@ export function renderBlock(profiles: Profile[], capsPath: string, crossfeedPath
     .filter((profile) => profile.enabled)
     .map((profile) => {
       if (isBitperfect(profile) || profile.stages.length === 0) {
-        const target = profile.target.replace(/^plughw:/, 'hw:');
         const mode = isBitperfect(profile) ? 'BITPERFECT' : 'PROCESSED';
-        return `pcm.${profile.pcmName} {\n    type copy\n    slave.pcm ${quote(target)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${mode}: ${profile.displayName}`)}\n    }\n}`;
+        return `pcm.${profile.pcmName} {\n    type plug\n    slave.pcm ${quote(profile.target)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${mode}: ${profile.displayName}`)}\n    }\n}`;
       }
       let slave = profile.target;
       const definitions = profile.stages.map((stage, index) => {
