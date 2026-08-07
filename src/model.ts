@@ -12,46 +12,100 @@ export const crossfeedCustom = z
   .strict();
 export const crossfeedSchema = z.union([crossfeedPreset, crossfeedCustom]);
 export type Crossfeed = z.infer<typeof crossfeedSchema>;
-export const profileSchema = z.object({
-  id: alsaName,
-  displayName: z.string().trim().min(1).max(100),
-  pcmName: alsaName,
-  internalPcmName: alsaName,
-  ctlName: alsaName,
-  target: z.string().regex(/^plughw:CARD=[A-Za-z0-9_-]+,DEV=\d+$/),
-  channels: z.number().int().min(1).max(32),
-  controlsPath: z.string().min(1),
-  enabled: z.boolean(),
-  // Optional keeps configs created before the per-profile EQ mode setting valid.
-  eqEnabled: z.boolean().optional(),
-  // Optional keeps legacy EQ-only bypass profiles valid; new profiles store this explicitly.
-  bitperfect: z.boolean().optional(),
-  // Optional keeps existing profiles on an unprocessed path until crossfeed is selected.
-  crossfeed: crossfeedSchema.optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
+
+const equalizerStageSchema = z
+  .object({
+    id: alsaName,
+    type: z.literal('equalizer'),
+    ctlName: alsaName,
+    controlsPath: z.string().min(1),
+  })
+  .strict();
+const crossfeedStageSchema = z
+  .object({
+    id: alsaName,
+    type: z.literal('crossfeed'),
+    settings: crossfeedSchema,
+  })
+  .strict();
+export const dspStageSchema = z.discriminatedUnion('type', [
+  equalizerStageSchema,
+  crossfeedStageSchema,
+]);
+export type DspStage = z.infer<typeof dspStageSchema>;
+export type EqualizerStage = z.infer<typeof equalizerStageSchema>;
+export type CrossfeedStage = z.infer<typeof crossfeedStageSchema>;
+
+export const profileSchema = z
+  .object({
+    id: alsaName,
+    displayName: z.string().trim().min(1).max(100),
+    pcmName: alsaName,
+    target: z.string().regex(/^plughw:CARD=[A-Za-z0-9_-]+,DEV=\d+$/),
+    channels: z.number().int().min(1).max(32),
+    enabled: z.boolean(),
+    bitperfect: z.boolean(),
+    stages: z.array(dspStageSchema),
+    // Transitional UI projections; DSP stages remain authoritative.
+    eqEnabled: z.boolean().optional(),
+    crossfeed: crossfeedSchema.optional(),
+    ctlName: alsaName.optional(),
+    controlsPath: z.string().min(1).optional(),
+    internalPcmName: alsaName.optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .superRefine((profile, context) => {
+    const ids = profile.stages.map((stage) => stage.id);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'DSP stage identifiers collide',
+        path: ['stages'],
+      });
+    const types = profile.stages.map((stage) => stage.type);
+    if (new Set(types).size !== types.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'A profile may contain one instance of each DSP stage type',
+        path: ['stages'],
+      });
+    if (profile.stages.some((stage) => stage.type === 'crossfeed') && profile.channels !== 2)
+      context.addIssue({
+        code: 'custom',
+        message: 'Crossfeed is available only for stereo profiles',
+        path: ['stages'],
+      });
+  });
 export type Profile = z.infer<typeof profileSchema>;
 export const configSchema = z.object({ version: z.literal(1), profiles: z.array(profileSchema) });
 export type Config = z.infer<typeof configSchema>;
 export const emptyConfig = (): Config => ({ version: 1, profiles: [] });
 
-export function isBitperfect(profile: Profile): boolean {
-  return profile.bitperfect ?? (profile.eqEnabled === false && !profile.crossfeed);
-}
+export const isBitperfect = (profile: Profile): boolean => profile.bitperfect;
+export const equalizerStage = (profile: Profile): EqualizerStage | undefined =>
+  profile.stages.find((stage): stage is EqualizerStage => stage.type === 'equalizer');
+export const stageLabel = (stage: DspStage): string =>
+  stage.type === 'equalizer' ? 'EQ' : 'Crossfeed';
 
 export function assertUniqueProfiles(profiles: Profile[]): void {
-  const pcmNames = profiles.flatMap((p) => [p.pcmName, p.internalPcmName]);
-  const ctlNames = profiles.map((p) => p.ctlName);
-  const ids = profiles.map((p) => p.id);
+  const pcmNames = profiles.map((profile) => profile.pcmName);
+  const ctlNames = profiles.flatMap((profile) =>
+    profile.stages
+      .filter((stage): stage is EqualizerStage => stage.type === 'equalizer')
+      .map((stage) => stage.ctlName),
+  );
+  const ids = profiles.map((profile) => profile.id);
   if (
     new Set(pcmNames).size !== pcmNames.length ||
     new Set(ctlNames).size !== ctlNames.length ||
     new Set(ids).size !== ids.length
   )
     throw new Error('Profile ALSA names collide');
-
-  const controlsPaths = profiles.map((profile) => path.resolve(profile.controlsPath));
+  const controls = profiles.flatMap((profile) =>
+    profile.stages.filter((stage): stage is EqualizerStage => stage.type === 'equalizer'),
+  );
+  const controlsPaths = controls.map((stage) => path.resolve(stage.controlsPath));
   if (new Set(controlsPaths).size !== controlsPaths.length)
     throw new Error('Profiles must use separate controls files');
 }

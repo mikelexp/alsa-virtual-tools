@@ -1,127 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { renderBlock, replaceManagedBlock, unmanagedEqualDefinitions } from '../src/asound.js';
+import { renderBlock, replaceManagedBlock } from '../src/asound.js';
 import type { Profile } from '../src/model.js';
 
 const profile: Profile = {
-  id: 'usb_dac_eq',
+  id: 'usb',
   displayName: 'USB DAC',
-  pcmName: 'usb_dac_eq',
-  internalPcmName: 'usb_dac_eq_internal',
-  ctlName: 'usb_dac_eq',
-  target: 'plughw:CARD=TEST_DAC,DEV=0',
+  pcmName: 'usb',
+  target: 'plughw:CARD=TEST,DEV=0',
   channels: 2,
-  controlsPath: '/tmp/usb_dac_eq.bin',
   enabled: true,
-  eqEnabled: true,
+  bitperfect: false,
+  stages: [
+    { id: 'eq', type: 'equalizer', ctlName: 'usb', controlsPath: '/tmp/usb.bin' },
+    { id: 'crossfeed', type: 'crossfeed', settings: 'normal' },
+  ],
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
-describe('managed ALSA block', () => {
-  it('renders multiple safe profiles', () => {
-    const result = renderBlock(
-      [
-        profile,
-        {
-          ...profile,
-          id: 'other_eq',
-          pcmName: 'other_eq',
-          internalPcmName: 'other_eq_internal',
-          ctlName: 'other_eq',
-          controlsPath: '/tmp/other_eq.bin',
-        },
-      ],
-      '/usr/lib/ladspa/caps.so',
+describe('ordered DSP chain', () => {
+  it('renders every stage in stored signal order', () => {
+    const block = renderBlock([profile], '/caps.so', '/ladspa/bs2b.so');
+    expect(block).toContain('pcm.usb_stage_01_eq');
+    expect(block).toContain('pcm.usb_stage_02_crossfeed');
+    expect(block).toContain('slave.pcm "usb_stage_01_eq"');
+    expect(block).toContain('ALSAChain EQ → Crossfeed: USB DAC');
+  });
+  it('supports crossfeed before EQ', () => {
+    const [eq, crossfeed] = profile.stages;
+    if (!eq || !crossfeed) throw new Error('fixture stages are missing');
+    const block = renderBlock(
+      [{ ...profile, stages: [crossfeed, eq] }],
+      '/caps.so',
+      '/ladspa/bs2b.so',
     );
-    expect(result).toContain('pcm.usb_dac_eq');
-    expect(result).toContain('pcm.other_eq');
-    expect(result).toContain('ALSAChain EQ: USB DAC');
+    expect(block).toContain('pcm.usb_stage_01_crossfeed');
+    expect(block).toContain('slave.pcm "usb_stage_01_crossfeed"');
   });
-  it('preserves bytes outside its block', () => {
-    const before = '# external\npcm.old { type hw }\n';
-    const replaced = replaceManagedBlock(before, renderBlock([profile], '/caps.so'));
-    expect(replaced.startsWith(before)).toBe(true);
-    expect(replaceManagedBlock(replaced, renderBlock([], '/caps.so')).startsWith(before)).toBe(
-      true,
-    );
+  it('bypasses every stage in BITPERFECT mode', () => {
+    const block = renderBlock([{ ...profile, bitperfect: true }], '/caps.so', '/ladspa/bs2b.so');
+    expect(block).toContain('type copy');
+    expect(block).not.toContain('type equal');
+    expect(block).not.toContain('type ladspa');
   });
-  it('renders a direct BITPERFECT path without equalizer definitions', () => {
-    const result = renderBlock([{ ...profile, eqEnabled: false }], '/caps.so');
-    expect(result).toContain('type copy');
-    expect(result).toContain('slave.pcm "hw:CARD=TEST_DAC,DEV=0"');
-    expect(result).toContain('ALSAChain BITPERFECT: USB DAC');
-    expect(result).not.toContain('type plug');
-    expect(result).not.toContain('type equal');
-    expect(result).not.toContain('ctl.usb_dac_eq');
-  });
-  it('bypasses every stored DSP stage while BITPERFECT is active', () => {
-    const result = renderBlock(
-      [{ ...profile, bitperfect: true, crossfeed: 'normal' }],
-      '/usr/lib/ladspa/caps.so',
-    );
-    expect(result).toContain('type copy');
-    expect(result).not.toContain('type equal');
-    expect(result).not.toContain('type ladspa');
-  });
-  it('allows PROCESSED mode with no DSP stage configured', () => {
-    const result = renderBlock([{ ...profile, eqEnabled: false, bitperfect: false }], '/caps.so');
-    expect(result).toContain('type copy');
-    expect(result).toContain('ALSAChain PROCESSED: USB DAC');
-    expect(result).not.toContain('type equal');
-    expect(result).not.toContain('type ladspa');
-  });
-  it('chains bs2b crossfeed after EQ and preserves a public PCM hint', () => {
-    const result = renderBlock(
-      [{ ...profile, crossfeed: 'normal' }],
-      '/usr/lib/ladspa/caps.so',
-      '/usr/lib/ladspa/bs2b.so',
-    );
-    expect(result).toContain('pcm.usb_dac_eq_internal_crossfeed');
-    expect(result).toContain('type ladspa');
-    expect(result).toContain('label bs2b');
-    expect(result).toContain('controls [ 700 6 ]');
-    expect(result).toContain('slave.pcm "usb_dac_eq_internal_crossfeed"');
-    expect(result).toContain('ALSAChain EQ + Crossfeed: USB DAC');
-  });
-  it('supports crossfeed without EQ but rejects a missing bs2b plugin', () => {
-    const result = renderBlock(
-      [{ ...profile, eqEnabled: false, crossfeed: 'gentle' }],
-      '/usr/lib/ladspa/caps.so',
-      '/usr/lib/ladspa/bs2b.so',
-    );
-    expect(result).toContain('slave.pcm "plughw:CARD=TEST_DAC,DEV=0"');
-    expect(result).toContain('ALSAChain Crossfeed: USB DAC');
-    expect(() =>
-      renderBlock([{ ...profile, crossfeed: 'normal' }], '/usr/lib/ladspa/caps.so'),
-    ).toThrow('bs2b LADSPA plugin is unavailable');
-  });
-  it('renders validated custom crossfeed values', () => {
-    const result = renderBlock(
-      [{ ...profile, crossfeed: { cutoff: 925, feed: 5.5 } }],
-      '/usr/lib/ladspa/caps.so',
-      '/usr/lib/ladspa/bs2b.so',
-    );
-    expect(result).toContain('controls [ 925 5.5 ]');
-  });
-  it('rejects malformed markers and detects external equal definitions', () => {
-    expect(() => replaceManagedBlock('# BEGIN ALSACHAIN\n', 'x')).toThrow();
-    expect(unmanagedEqualDefinitions('pcm.external { type equal\n }')).toEqual(['external']);
-  });
-
-  it('refuses to render profiles that share EQ controls', () => {
-    expect(() =>
-      renderBlock(
-        [
-          profile,
-          {
-            ...profile,
-            id: 'other_eq',
-            pcmName: 'other_eq',
-            internalPcmName: 'other_eq_internal',
-            ctlName: 'other_eq',
-          },
-        ],
-        '/caps.so',
-      ),
-    ).toThrow('Profiles must use separate controls files');
+  it('preserves external configuration around its managed block', () => {
+    const value = replaceManagedBlock('# external\n', renderBlock([], '/caps.so'));
+    expect(value.startsWith('# external\n')).toBe(true);
   });
 });

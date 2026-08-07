@@ -6,7 +6,14 @@ import { physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
 import { equalizerBarRows, equalizerCutBarRows, type EqualizerBand } from './equalizer.js';
-import { isBitperfect, type Crossfeed, type CrossfeedPreset, type Profile } from './model.js';
+import {
+  isBitperfect,
+  stageLabel,
+  type Crossfeed,
+  type CrossfeedPreset,
+  type DspStage,
+  type Profile,
+} from './model.js';
 import type { ALSAChainService } from './service.js';
 
 type Screen =
@@ -19,7 +26,9 @@ type Screen =
   | 'diagnostics'
   | 'new'
   | 'edit'
-  | 'delete';
+  | 'delete'
+  | 'stage-catalog'
+  | 'stage-manager';
 type Color =
   | 'green'
   | 'yellow'
@@ -80,6 +89,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
   const [states, setStates] = useState<Record<string, PlaybackState>>({});
   const [equalizers, setEqualizers] = useState<Record<string, EqualizerBand[]>>({});
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [stageSelection, setStageSelection] = useState(0);
 
   const refreshEqualizers = async (sourceProfiles?: Profile[]) => {
     const candidates = sourceProfiles ?? (await service.list());
@@ -221,6 +231,8 @@ export function App({ service, report }: { service: ALSAChainService; report: De
       if (input === 'm' && profiles[selection]) openEqualizer(profiles[selection]);
       if (input === 'b' && profiles[selection]) toggleBitperfect(profiles[selection]);
       if (input === 'c' && profiles[selection]) openCrossfeed(profiles[selection]);
+      if (input === 'a' && profiles[selection]) setScreen('stage-catalog');
+      if (input === 's' && profiles[selection]) setScreen('stage-manager');
     } else if (screen === 'detail') {
       if (key.escape) setScreen('list');
       if (input === 'e' && profile) setScreen('edit');
@@ -228,6 +240,8 @@ export function App({ service, report }: { service: ALSAChainService; report: De
       if (input === 'b' && profile) toggleBitperfect(profile);
       if (input === 'c' && profile) openCrossfeed(profile);
       if (input === 'd' && profile) setScreen('delete');
+      if (input === 'a' && profile) setScreen('stage-catalog');
+      if (input === 's' && profile) setScreen('stage-manager');
     } else if (!['equalizer', 'crossfeed', 'crossfeed-custom'].includes(screen) && key.escape)
       setScreen('list');
   });
@@ -324,6 +338,60 @@ export function App({ service, report }: { service: ALSAChainService; report: De
         />
       )}
       {screen === 'help' && <Help />}
+      {screen === 'stage-catalog' && profile && (
+        <StageCatalog
+          profile={profile}
+          report={report}
+          onBack={() => setScreen('list')}
+          onAdd={(type) =>
+            service
+              .addStage(profile.id, type)
+              .then(async () => {
+                await refresh(true);
+                setStageSelection(profile.stages.length);
+                setScreen(type === 'equalizer' ? 'equalizer' : 'crossfeed');
+              })
+              .catch((error: Error) =>
+                setFeedback({
+                  variant: 'error',
+                  title: 'DSP STAGE FAILED',
+                  message: error.message,
+                }),
+              )
+          }
+        />
+      )}
+      {screen === 'stage-manager' && profile && (
+        <StageManager
+          profile={profile}
+          height={terminalSize.height}
+          selection={stageSelection}
+          onBack={() => setScreen('list')}
+          onSelect={setStageSelection}
+          onMove={(direction) => {
+            const stage = profile.stages[stageSelection];
+            const nextSelection = stageSelection + direction;
+            if (!stage || nextSelection < 0 || nextSelection >= profile.stages.length) return;
+            void service.moveStage(profile.id, stage.id, direction).then(async () => {
+              setStageSelection(nextSelection);
+              await refresh(true);
+            });
+          }}
+          onConfigure={() => {
+            const stage = profile.stages[stageSelection];
+            if (stage) setScreen(stage.type === 'equalizer' ? 'equalizer' : 'crossfeed');
+          }}
+          onRemove={() => {
+            const stage = profile.stages[stageSelection];
+            if (!stage) return;
+            void service.removeStage(profile.id, stage.id).then(() => {
+              setStageSelection((value) => Math.max(0, value - 1));
+              return refresh(true);
+            });
+          }}
+          onAdd={() => setScreen('stage-catalog')}
+        />
+      )}
       {screen === 'diagnostics' && <Diagnostics report={report} />}
       {screen === 'new' && (
         <NewProfile
@@ -368,6 +436,15 @@ export function App({ service, report }: { service: ALSAChainService; report: De
         <CrossfeedNavigation />
       ) : screen === 'crossfeed-custom' ? (
         <CrossfeedCustomNavigation />
+      ) : screen === 'stage-manager' ? (
+        <Box marginTop={1} gap={2} flexWrap="wrap">
+          <KeyHint keyName="↑ / ↓" label="select stage" />
+          <KeyHint keyName="shift + ↑ / ↓" label="move stage" />
+          <KeyHint keyName="enter" label="configure" />
+          <KeyHint keyName="d" label="remove" />
+          <KeyHint keyName="a" label="add stage" />
+          <KeyHint keyName="esc" label="back" />
+        </Box>
       ) : (
         <Text color={MUTED}>esc back</Text>
       )}
@@ -500,6 +577,8 @@ function Navigation() {
         <KeyHint keyName="m" label="equalizer" />
         <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
         <KeyHint keyName="c" label="crossfeed" />
+        <KeyHint keyName="a" label="add DSP stage" />
+        <KeyHint keyName="s" label="manage stages" />
       </Box>
       <Box gap={2} flexWrap="wrap">
         <KeyHint keyName="r" label="refresh" />
@@ -518,6 +597,8 @@ function DetailNavigation() {
       <KeyHint keyName="m" label="equalizer" />
       <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
       <KeyHint keyName="c" label="crossfeed" />
+      <KeyHint keyName="a" label="add DSP stage" />
+      <KeyHint keyName="s" label="manage stages" />
       <KeyHint keyName="d" label="delete interface" />
       <KeyHint keyName="x" label="remove EQ" />
       <KeyHint keyName="esc" label="back" />
@@ -836,6 +917,8 @@ function ProfileRow({
 }) {
   const audioDetails = state?.rate && state.format ? `${state.rate} ${state.format}` : 'idle';
   const equalizerWidth = Math.max(16, Math.min(42, Math.floor(width * 0.4)));
+  const hasEqualizer = profile.stages.some((stage) => stage.type === 'equalizer');
+  const stageChain = profile.stages.map(stageLabel).join(' → ');
   return (
     <Box
       minHeight={5}
@@ -869,8 +952,16 @@ function ProfileRow({
             {'->'} {device?.cardName ?? profile.target}
           </Text>
         </Box>
+        <Box>
+          <Text color={ACCENT}>stages</Text>
+          <Text color={MUTED} wrap="truncate">
+            {' '}
+            {stageChain || 'none'}
+            {isBitperfect(profile) && stageChain ? ' · bypassed' : ''}
+          </Text>
+        </Box>
       </Box>
-      {profile.enabled && profile.eqEnabled !== false && !isBitperfect(profile) && (
+      {profile.enabled && hasEqualizer && !isBitperfect(profile) && (
         <ProfileEqualizer bands={equalizer} width={equalizerWidth} selected={selected} />
       )}
       <Box
@@ -884,15 +975,7 @@ function ProfileRow({
         {profile.enabled && (
           <Badge
             label={
-              isBitperfect(profile)
-                ? 'BITPERFECT'
-                : profile.crossfeed
-                  ? profile.eqEnabled === false
-                    ? 'XFEED'
-                    : 'EQ + XFEED'
-                  : profile.eqEnabled === false
-                    ? 'PROCESSED'
-                    : 'EQ'
+              isBitperfect(profile) ? 'BITPERFECT' : profile.stages.length ? 'DSP' : 'PROCESSED'
             }
             color={isBitperfect(profile) ? 'green' : 'yellow'}
           />
@@ -966,7 +1049,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
         <Box flexDirection="column" paddingY={1}>
           <InfoRow label="Status" value={state?.state ?? 'Unavailable'} valueColor={color} />
           <InfoRow label="Public PCM" value={profile.pcmName} />
-          <InfoRow label="CTL" value={profile.ctlName} />
+          <InfoRow label="CTL" value={profile.ctlName ?? '-'} />
           <InfoRow label="Target" value={profile.target} />
         </Box>
       </Panel>
@@ -993,7 +1076,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
       </Panel>
       <Panel title="PERSISTENCE" color="gray">
         <Box flexDirection="column" paddingY={1}>
-          <InfoRow label="Controls" value={profile.controlsPath} />
+          <InfoRow label="Controls" value={profile.controlsPath ?? '-'} />
           <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
           <Text color={MUTED}>
             b switches BITPERFECT / PROCESSED; m and c activate processed mode. Restart playback
@@ -1127,6 +1210,151 @@ function Diagnostics({ report }: { report: DependencyReport }) {
           </Box>
         </Panel>
       )}
+    </Box>
+  );
+}
+
+function StageCatalog({
+  profile,
+  report,
+  onAdd,
+  onBack,
+}: {
+  profile: Profile;
+  report: DependencyReport;
+  onAdd: (type: DspStage['type']) => void;
+  onBack: () => void;
+}) {
+  const entries: { type: DspStage['type']; title: string; detail: string; unavailable?: string }[] =
+    [
+      {
+        type: 'equalizer',
+        title: 'Graphic equalizer',
+        detail: 'CAPS Eq10 with ALSA-discovered controls.',
+        unavailable: profile.stages.some((stage) => stage.type === 'equalizer')
+          ? 'Already in this chain'
+          : report.capsPath
+            ? undefined
+            : 'caps.so is unavailable',
+      },
+      {
+        type: 'crossfeed',
+        title: 'Headphone crossfeed',
+        detail: 'bs2b stereo crossfeed.',
+        unavailable: profile.stages.some((stage) => stage.type === 'crossfeed')
+          ? 'Already in this chain'
+          : profile.channels !== 2
+            ? 'Requires stereo'
+            : report.crossfeedPath
+              ? undefined
+              : 'Install ladspa-bs2b first',
+      },
+    ];
+  const [selection, setSelection] = useState(0);
+  useInput((input, key) => {
+    if (key.escape) onBack();
+    if (key.upArrow) setSelection((value) => Math.max(0, value - 1));
+    if (key.downArrow) setSelection((value) => Math.min(entries.length - 1, value + 1));
+    if (key.return) {
+      const entry = entries[selection];
+      if (entry && !entry.unavailable) onAdd(entry.type);
+    }
+  });
+  return (
+    <Panel title="ADD DSP STAGE">
+      <Box flexDirection="column" paddingY={1}>
+        {entries.map((entry, index) => (
+          <Box key={entry.type} flexDirection="column" marginBottom={1}>
+            <Text
+              bold
+              color={index === selection ? ACCENT_BRIGHT : entry.unavailable ? 'gray' : TEXT}
+            >
+              {index === selection ? '> ' : '  '}
+              {entry.title}
+            </Text>
+            <Text color={MUTED}> {entry.unavailable ?? entry.detail}</Text>
+          </Box>
+        ))}
+      </Box>
+      <Text color={MUTED}>↑/↓ select · enter add & configure · esc cancel</Text>
+    </Panel>
+  );
+}
+
+function StageManager({
+  profile,
+  height,
+  selection,
+  onBack,
+  onSelect,
+  onMove,
+  onConfigure,
+  onRemove,
+  onAdd,
+}: {
+  profile: Profile;
+  height: number;
+  selection: number;
+  onBack: () => void;
+  onSelect: (value: number) => void;
+  onMove: (direction: -1 | 1) => void;
+  onConfigure: () => void;
+  onRemove: () => void;
+  onAdd: () => void;
+}) {
+  useInput((input, key) => {
+    if (key.escape) onBack();
+    if (key.shift && key.upArrow) onMove(-1);
+    else if (key.shift && key.downArrow) onMove(1);
+    else if (key.upArrow) onSelect(Math.max(0, selection - 1));
+    else if (key.downArrow) onSelect(Math.min(profile.stages.length - 1, selection + 1));
+    if (input === '[') onMove(-1);
+    if (input === ']') onMove(1);
+    if (key.return) onConfigure();
+    if (input === 'd') onRemove();
+    if (input === 'a') onAdd();
+  });
+  const visible = Math.max(3, height - 13);
+  const start = Math.max(
+    0,
+    Math.min(Math.max(0, profile.stages.length - visible), selection - Math.floor(visible / 2)),
+  );
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title="MANAGE DSP STAGES">
+        <Text color={MUTED}>
+          Hardware → {profile.stages.map(stageLabel).join(' → ') || 'no DSP stages'} → Public PCM
+        </Text>
+      </Panel>
+      <Panel title={`${profile.stages.length} STAGES`} color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          {profile.stages.length === 0 ? (
+            <Text color={MUTED}>No DSP stages yet. Press a to add one.</Text>
+          ) : (
+            profile.stages.slice(start, start + visible).map((stage, index) => {
+              const absolute = start + index;
+              return (
+                <Text
+                  key={stage.id}
+                  bold={absolute === selection}
+                  color={absolute === selection ? ACCENT_BRIGHT : TEXT}
+                >
+                  {absolute === selection ? '> ' : '  '}
+                  {String(absolute + 1).padStart(2, '0')} · {stageLabel(stage)}
+                  <Text color={MUTED}>
+                    {stage.type === 'crossfeed'
+                      ? ` · ${typeof stage.settings === 'string' ? stage.settings : 'custom'}`
+                      : ' · CAPS Eq10'}
+                  </Text>
+                </Text>
+              );
+            })
+          )}
+        </Box>
+      </Panel>
+      <Text color={MUTED}>
+        ↑/↓ select · shift+↑/↓ move stage · enter configure · d remove · a add · esc back
+      </Text>
     </Box>
   );
 }
@@ -1359,7 +1587,8 @@ function DeleteProfile({
         };
         await service.applyConfig(next);
         await service.store.save(next);
-        if (deleteControls) await service.store.deleteControlsFile(profile.controlsPath);
+        if (deleteControls && profile.controlsPath)
+          await service.store.deleteControlsFile(profile.controlsPath);
         onDone();
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));

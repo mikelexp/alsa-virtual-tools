@@ -1,77 +1,71 @@
+import path from 'node:path';
 import {
   assertUniqueProfiles,
   isBitperfect,
+  stageLabel,
   type Crossfeed,
-  profileSchema,
   type CrossfeedPreset,
+  type DspStage,
   type Profile,
 } from './model.js';
-import path from 'node:path';
 
 export const beginMarker = '# BEGIN ALSACHAIN';
 export const endMarker = '# END ALSACHAIN';
 const quote = (value: string) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
-const hwTarget = (target: string) => {
-  const match = target.match(/^plughw:CARD=([A-Za-z0-9_-]+),DEV=(\d+)$/);
-  if (!match) throw new Error(`Invalid hardware target: ${target}`);
-  return { card: match[1] ?? '', device: match[2] ?? '' };
-};
-
 const crossfeedControls: Record<CrossfeedPreset, readonly [number, number]> = {
   gentle: [700, 4.5],
   normal: [700, 6],
   strong: [650, 9.5],
 };
+const crossfeedValues = (settings: Crossfeed): readonly [number, number] =>
+  typeof settings === 'string' ? crossfeedControls[settings] : [settings.cutoff, settings.feed];
+const stagePcmName = (profile: Profile, index: number, stage: DspStage) =>
+  `${profile.id}_stage_${String(index + 1).padStart(2, '0')}_${stage.id}`;
 
-function crossfeedControlValues(crossfeed: Crossfeed): readonly [number, number] {
-  return typeof crossfeed === 'string'
-    ? crossfeedControls[crossfeed]
-    : [crossfeed.cutoff, crossfeed.feed];
-}
-
-function renderCrossfeedPcm(p: Profile, slave: string, crossfeedPath: string): string {
-  if (!p.crossfeed) return slave;
-  if (!crossfeedPath) throw new Error('bs2b LADSPA plugin is unavailable');
-  const controls = crossfeedControlValues(p.crossfeed).join(' ');
-  return `pcm.${p.internalPcmName}_crossfeed {\n    type ladspa\n    slave.pcm ${quote(slave)}\n    path ${quote(path.dirname(crossfeedPath))}\n    plugins [\n        {\n            label bs2b\n            input {\n                controls [ ${controls} ]\n            }\n        }\n    ]\n}`;
+function renderStage(
+  profile: Profile,
+  stage: DspStage,
+  index: number,
+  slave: string,
+  capsPath: string,
+  crossfeedPath: string,
+): { pcm: string; output: string } {
+  const output = stagePcmName(profile, index, stage);
+  if (stage.type === 'equalizer') {
+    if (!capsPath) throw new Error('caps.so is unavailable');
+    return {
+      output,
+      pcm: `ctl.${stage.ctlName} {\n    type equal\n    controls ${quote(stage.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${profile.channels}\n}\n\npcm.${output} {\n    type equal\n    slave.pcm ${quote(slave)}\n    controls ${quote(stage.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${profile.channels}\n}`,
+    };
+  }
+  if (!crossfeedPath)
+    throw new Error('bs2b LADSPA plugin is unavailable; install ladspa-bs2b first');
+  return {
+    output,
+    pcm: `pcm.${output} {\n    type ladspa\n    slave.pcm ${quote(slave)}\n    path ${quote(path.dirname(crossfeedPath))}\n    plugins [\n        {\n            label bs2b\n            input {\n                controls [ ${crossfeedValues(stage.settings).join(' ')} ]\n            }\n        }\n    ]\n}`,
+  };
 }
 
 export function renderBlock(profiles: Profile[], capsPath: string, crossfeedPath = ''): string {
   assertUniqueProfiles(profiles);
-  const active = profiles.filter((profile) => profile.enabled);
-  const entries = active.map((raw) => {
-    const p = profileSchema.parse(raw);
-    const eqEnabled = p.eqEnabled !== false;
-    const bitperfect = isBitperfect(p);
-    const processing = eqEnabled ? 'EQ' : '';
-    const description = [processing, p.crossfeed ? 'Crossfeed' : ''].filter(Boolean).join(' + ');
-    const pcm =
-      bitperfect || (!eqEnabled && !p.crossfeed)
-        ? (() => {
-            const target = hwTarget(p.target);
-            const mode = bitperfect ? 'BITPERFECT' : 'PROCESSED';
-            return `pcm.${p.pcmName} {\n    type copy\n    slave.pcm ${quote(`hw:CARD=${target.card},DEV=${target.device}`)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${mode}: ${p.displayName}`)}\n    }\n}`;
-          })()
-        : !eqEnabled
-          ? (() => {
-              const target = hwTarget(p.target);
-              const crossfeed = renderCrossfeedPcm(
-                p,
-                `plughw:CARD=${target.card},DEV=${target.device}`,
-                crossfeedPath,
-              );
-              return `${crossfeed}\n\npcm.${p.pcmName} {\n    type plug\n    slave.pcm ${quote(`${p.internalPcmName}_crossfeed`)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${description}: ${p.displayName}`)}\n    }\n}`;
-            })()
-          : (() => {
-              const crossfeed = p.crossfeed
-                ? `\n\n${renderCrossfeedPcm(p, p.internalPcmName, crossfeedPath)}`
-                : '';
-              const slave = p.crossfeed ? `${p.internalPcmName}_crossfeed` : p.internalPcmName;
-              return `ctl.${p.ctlName} {\n    type equal\n    controls ${quote(p.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${p.channels}\n}\n\npcm.${p.internalPcmName} {\n    type equal\n    slave.pcm ${quote(p.target)}\n    controls ${quote(p.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${p.channels}\n}${crossfeed}\n\npcm.${p.pcmName} {\n    type plug\n    slave.pcm ${quote(slave)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${description}: ${p.displayName}`)}\n    }\n}`;
-            })();
-    return pcm;
-  });
-  return `${beginMarker}\n# Generated by alsachain. Do not edit this block manually.\n\n${entries.join('\n\n')}\n${endMarker}\n`;
+  const entries = profiles
+    .filter((profile) => profile.enabled)
+    .map((profile) => {
+      if (isBitperfect(profile) || profile.stages.length === 0) {
+        const target = profile.target.replace(/^plughw:/, 'hw:');
+        const mode = isBitperfect(profile) ? 'BITPERFECT' : 'PROCESSED';
+        return `pcm.${profile.pcmName} {\n    type copy\n    slave.pcm ${quote(target)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${mode}: ${profile.displayName}`)}\n    }\n}`;
+      }
+      let slave = profile.target;
+      const definitions = profile.stages.map((stage, index) => {
+        const rendered = renderStage(profile, stage, index, slave, capsPath, crossfeedPath);
+        slave = rendered.output;
+        return rendered.pcm;
+      });
+      const description = profile.stages.map(stageLabel).join(' → ');
+      return `${definitions.join('\n\n')}\n\npcm.${profile.pcmName} {\n    type plug\n    slave.pcm ${quote(slave)}\n    hint {\n        show on\n        description ${quote(`ALSAChain ${description}: ${profile.displayName}`)}\n    }\n}`;
+    });
+  return `${beginMarker}\n# Generated by alsachain. Do not edit this block manually.\n\n${entries.join('\n\n')}${entries.length ? '\n' : ''}${endMarker}\n`;
 }
 
 export function replaceManagedBlock(existing: string, block: string): string {
@@ -81,10 +75,12 @@ export function replaceManagedBlock(existing: string, block: string): string {
     return existing + (existing && !existing.endsWith('\n') ? '\n' : '') + block;
   if (start < 0 || end < start) throw new Error('Malformed alsachain markers in .asoundrc');
   const after = end + endMarker.length;
-  const newline = existing.slice(after).startsWith('\n') ? 1 : 0;
-  return existing.slice(0, start) + block + existing.slice(after + newline);
+  return (
+    existing.slice(0, start) +
+    block +
+    existing.slice(after + (existing.slice(after).startsWith('\n') ? 1 : 0))
+  );
 }
-
 export function unmanagedEqualDefinitions(content: string): string[] {
   const ownStart = content.indexOf(beginMarker);
   const ownEnd = content.indexOf(endMarker);
@@ -93,6 +89,6 @@ export function unmanagedEqualDefinitions(content: string): string[] {
       ? content.slice(0, ownStart) + content.slice(ownEnd + endMarker.length)
       : content;
   return [...external.matchAll(/(?:pcm|ctl)\.([A-Za-z][A-Za-z0-9_-]*)\s*\{\s*type\s+equal/g)].map(
-    (m) => m[1] ?? 'unknown',
+    (match) => match[1] ?? 'unknown',
   );
 }

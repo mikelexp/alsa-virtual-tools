@@ -12,6 +12,7 @@ import {
   formatEqualizerGain,
 } from './equalizer.js';
 import type { Profile } from './model.js';
+import { equalizerStage } from './model.js';
 import type { ALSAChainService } from './service.js';
 
 const ACCENT = '#315BEF';
@@ -26,7 +27,7 @@ export function EqualizerScreen({
   height,
   active,
   onBack,
-  onRemove,
+  onRemove: _onRemove,
   onError,
   onBandsChange,
 }: {
@@ -36,10 +37,11 @@ export function EqualizerScreen({
   height: number;
   active: boolean;
   onBack: () => void;
-  onRemove: () => Promise<void>;
+  onRemove?: () => Promise<void>;
   onError: (message: string) => void;
   onBandsChange: (bands: EqualizerBand[]) => void;
 }) {
+  void _onRemove;
   const [bands, setBands] = useState<EqualizerBand[]>([]);
   const [selection, setSelection] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -83,20 +85,6 @@ export function EqualizerScreen({
     );
     bandsRef.current = nextBands;
     setBands(nextBands);
-  };
-
-  const removeEqualizer = () => {
-    if (savingRef.current) return;
-    savingRef.current = true;
-    setSaving(true);
-    void onRemove()
-      .catch((removeError: unknown) =>
-        onError(removeError instanceof Error ? removeError.message : String(removeError)),
-      )
-      .finally(() => {
-        savingRef.current = false;
-        setSaving(false);
-      });
   };
 
   const resetEqualizer = () => {
@@ -148,10 +136,6 @@ export function EqualizerScreen({
       }
       if (input === 'r' && error) {
         if (!savingRef.current) void load();
-        return;
-      }
-      if (input === 'x' && !loading && !savingRef.current) {
-        removeEqualizer();
         return;
       }
       if (input === 'f' && !loading && !savingRef.current) {
@@ -209,7 +193,7 @@ export function EqualizerScreen({
         </Text>
       </Box>
       <Text color={MUTED}>
-        {profile.displayName} · {profile.ctlName} · linked channels
+        {profile.displayName} · {equalizerStage(profile)?.ctlName ?? 'EQ CTL'} · linked channels
       </Text>
       <Text color={MUTED}>↑ boost to +24 dB · 0 dB = Flat · ↓ cut to −48 dB</Text>
       {loading ? (
@@ -243,9 +227,7 @@ export function EqualizerScreen({
           <Text color={MUTED}>changes save when leaving this screen</Text>
         </Box>
       )}
-      <Text color={MUTED}>
-        ↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · x removes EQ · esc save & back
-      </Text>
+      <Text color={MUTED}>↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · esc save & back</Text>
     </Box>
   );
 }

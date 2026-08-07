@@ -12,7 +12,13 @@ import {
   unlink,
 } from 'node:fs/promises';
 import path from 'node:path';
-import { configSchema, emptyConfig, assertUniqueProfiles, type Config } from './model.js';
+import {
+  configSchema,
+  emptyConfig,
+  assertUniqueProfiles,
+  type Config,
+  type EqualizerStage,
+} from './model.js';
 import type { Paths } from './paths.js';
 import { renderBlock, replaceManagedBlock } from './asound.js';
 
@@ -59,15 +65,19 @@ export class Store {
     assertUniqueProfiles(profiles);
     const fileIdentities = new Set<string>();
     for (const profile of profiles) {
-      await this.assertControlsPath(profile.controlsPath);
-      try {
-        const info = await lstat(profile.controlsPath);
-        const identity = `${info.dev}:${info.ino}`;
-        if (fileIdentities.has(identity))
-          throw new Error('Profiles must not share hard-linked controls files');
-        fileIdentities.add(identity);
-      } catch (error: unknown) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      for (const stage of profile.stages.filter(
+        (candidate): candidate is EqualizerStage => candidate.type === 'equalizer',
+      )) {
+        await this.assertControlsPath(stage.controlsPath);
+        try {
+          const info = await lstat(stage.controlsPath);
+          const identity = `${info.dev}:${info.ino}`;
+          if (fileIdentities.has(identity))
+            throw new Error('Profiles must not share hard-linked controls files');
+          fileIdentities.add(identity);
+        } catch (error: unknown) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
       }
     }
   }
