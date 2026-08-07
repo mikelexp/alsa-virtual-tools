@@ -88,8 +88,8 @@ alsachain print-config
 The TUI manages each virtual PCM as an ordered DSP chain. Press `a` to open the
 scrollable **Add DSP stage** catalog and choose a compatible stage; it is added
 to the chain and opens its configuration. Press `s` for the scrollable
-**Manage DSP stages** screen, where `[` and `]` reorder the selected stage,
-`enter` configures it, and `d` removes it after confirmation. The catalog and
+**Manage DSP stages** screen, where `Shift+↑` and `Shift+↓` reorder the
+selected stage, `enter` configures it, and `d` removes it. The catalog and
 manager are designed to grow as new stages are added. EQ bands, labels, ranges,
 and current values are always discovered from the ALSA CTL rather than assumed.
 
@@ -113,7 +113,7 @@ ctl.dac_eq {
     channels 2
 }
 
-pcm.dac_eq_internal {
+pcm.dac_eq_stage_01_eq {
     type equal
     slave.pcm "plughw:CARD=USB_DAC,DEV=0"
     controls "/home/me/.config/alsachain/controls/dac_eq.bin"
@@ -124,7 +124,7 @@ pcm.dac_eq_internal {
 
 pcm.dac_eq {
     type plug
-    slave.pcm "dac_eq_internal"
+    slave.pcm "dac_eq_stage_01_eq"
     hint {
         show on
         description "ALSAChain EQ: USB DAC"

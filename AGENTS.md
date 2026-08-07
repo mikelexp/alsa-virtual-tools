@@ -22,12 +22,12 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 
 ## Architecture
 
-- `src/model.ts`: Zod schemas, safe ALSA identifiers, profile collision rules.
+- `src/model.ts`: Zod schemas, safe ALSA identifiers, ordered DSP-stage instances, and profile collision rules.
 - `src/store.ts`: XDG state, atomic writes, `.asoundrc` backups/rollback, controls-directory safety.
-- `src/asound.ts`: the isolated generated block and external `type equal` detection.
+- `src/asound.ts`: the isolated generated block, ordered DSP-chain rendering, and external `type equal` detection.
 - `src/alsa.ts`: `aplay -l` parsing and non-invasive `/proc/asound` state reading.
 - `src/deps.ts`: executable/module/LADSPA validation and install suggestions only.
-- `src/service.ts`: application actions and integrated EQ CTL reads/writes.
+- `src/service.ts`: transactional stage add/move/remove actions and integrated EQ CTL reads/writes.
 - `src/ui.tsx`: keyboard-only Ink UI.
 - `src/index.tsx`: TUI startup plus non-interactive CLI commands.
 
@@ -41,6 +41,9 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Text fields must behave like normal terminal inputs: support visible cursor placement, insertion, arrows, backspace, delete, Home/End, and predictable focus movement.
 - EQ graphs, both in the fullscreen editor and virtual-card list, use the eight partial-height Unicode blocks `▁▂▃▄▅▆▇█`. Preserve that shared visual scale instead of reverting to binary or coarse bars.
 - Do not show success-confirmation modals for normal in-place settings changes, including crossfeed; return to the relevant screen and reflect the new state. Reserve modals for errors, destructive actions, or information that needs acknowledgement.
+- Keep **Add DSP stage** and **Manage DSP stages** as fullscreen, height-aware lists: the stage catalog and an individual chain can grow beyond the terminal viewport.
+- Render stages in their saved signal order everywhere a profile is summarized. When a stage moves, move the selection with that same stage.
+- Use `Shift+↑` / `Shift+↓` as the visible reordering shortcut; `[` / `]` may remain as non-advertised aliases.
 
 ## ALSA Rules
 
@@ -51,10 +54,11 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - `alsaequal` is DSP, so it is never bit-perfect. Physical `hw_params` alone do not reveal source bit depth or native sample rate.
 - Preserve the `.asoundrc` symlink itself: write atomically to its resolved target and retain the link.
 - Controls files must remain inside the configured `controlsDir`; reject traversal and symlinks.
+- `Profile.stages` is the source of truth for DSP. A stage renderer wraps the preceding PCM; do not reintroduce boolean EQ/crossfeed combinations as chain logic.
 
 ## Equalizer Backend Direction
 
-- Keep CAPS `Eq10` as the only active backend for now. It provides 10 fixed bands; do not migrate existing profiles or add another backend unless explicitly requested.
+- Keep CAPS `Eq10` as the only active backend for now. It provides 10 fixed bands; do not add another backend unless explicitly requested.
 - Never hard-code 10 bands in the model or TUI. Discover the current controls through `amixer` so rendering and editing remain compatible with a future backend change.
 - Every virtual card must have its own normalized controls path and must not share the same file through aliases or hard links.
 - The preferred future higher-band option is the SWH LADSPA `mbeq` module from `swh-plugins`. It exposes 15 fixed bands and should require backend selection/configuration rather than custom DSP. Upstream definition: <https://github.com/swh/ladspa/blob/master/mbeq_1197.xml>.
