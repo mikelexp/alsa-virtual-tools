@@ -19,6 +19,12 @@ const crossfeedControls: Record<CrossfeedPreset, readonly [number, number]> = {
 };
 const crossfeedValues = (settings: Crossfeed): readonly [number, number] =>
   typeof settings === 'string' ? crossfeedControls[settings] : [settings.cutoff, settings.feed];
+const gainCoefficient = (gainDb: number) => 10 ** (gainDb / 20);
+const gainTtable = (channels: number, coefficient: number) =>
+  Array.from(
+    { length: channels },
+    (_, channel) => `        ${channel}.${channel} ${coefficient}`,
+  ).join('\n');
 const stagePcmName = (profile: Profile, index: number, stage: DspStage) =>
   `${profile.id}_stage_${String(index + 1).padStart(2, '0')}_${stage.id}`;
 const statusPcmName = (profile: Profile) => `${profile.id}_status`;
@@ -43,6 +49,12 @@ function renderStage(
     return {
       output,
       pcm: `ctl.${stage.ctlName} {\n    type equal\n    controls ${quote(stage.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${profile.channels}\n}\n\npcm.${output} {\n    type equal\n    slave.pcm ${quote(slave)}\n    controls ${quote(stage.controlsPath)}\n    library ${quote(capsPath)}\n    module "Eq10"\n    channels ${profile.channels}\n}`,
+    };
+  }
+  if (stage.type === 'gain') {
+    return {
+      output,
+      pcm: `pcm.${output} {\n    type route\n    slave.pcm ${quote(slave)}\n    ttable {\n${gainTtable(profile.channels, gainCoefficient(stage.gainDb))}\n    }\n}`,
     };
   }
   if (!crossfeedPath)

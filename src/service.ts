@@ -88,7 +88,9 @@ export class ALSAChainService {
     const profile = (await this.list()).find((candidate) => candidate.id === profileId);
     if (!profile) throw new Error(`Unknown profile: ${profileId}`);
     if (profile.stages.some((stage) => stage.type === type))
-      throw new Error(`${type === 'equalizer' ? 'EQ' : 'Crossfeed'} is already in this chain`);
+      throw new Error(
+        `${type === 'equalizer' ? 'EQ' : type === 'crossfeed' ? 'Crossfeed' : 'Gain'} is already in this chain`,
+      );
     if (type === 'crossfeed' && profile.channels !== 2)
       throw new Error('Crossfeed is available only for stereo profiles');
     const stage: DspStage =
@@ -99,7 +101,9 @@ export class ALSAChainService {
             ctlName: profile.id,
             controlsPath: path.join(this.paths.controlsDir, `${profile.id}.bin`),
           }
-        : { id: 'crossfeed', type, settings: 'normal' };
+        : type === 'crossfeed'
+          ? { id: 'crossfeed', type, settings: 'normal' }
+          : { id: 'gain', type, gainDb: 0 };
     await this.updateStages(profileId, [...profile.stages, stage]);
   }
   async removeStage(profileId: string, stageId: string): Promise<void> {
@@ -166,6 +170,28 @@ export class ALSAChainService {
         candidate.id === stage.id
           ? { ...candidate, settings: crossfeedSchema.parse(settings) }
           : candidate,
+      ),
+    );
+  }
+  async setGain(profileId: string, value?: number): Promise<void> {
+    const profile = (await this.list()).find((candidate) => candidate.id === profileId);
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`);
+    const stage = profile.stages.find((candidate) => candidate.type === 'gain');
+    if (value === undefined) {
+      if (stage) await this.removeStage(profileId, stage.id);
+      return;
+    }
+    if (!Number.isFinite(value) || value < -24 || value > 12)
+      throw new Error('Gain must be from -24 to +12 dB');
+    if (!stage) {
+      await this.addStage(profileId, 'gain');
+      return this.setGain(profileId, value);
+    }
+    if (stage.type !== 'gain') throw new Error('Gain is not in this chain');
+    await this.updateStages(
+      profileId,
+      profile.stages.map((candidate) =>
+        candidate.id === stage.id ? { ...candidate, gainDb: value } : candidate,
       ),
     );
   }

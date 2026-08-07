@@ -152,13 +152,13 @@ alsachain repair
 alsachain print-config
 ```
 
-The TUI manages each virtual PCM as an ordered DSP chain. Press `a` to open the
-scrollable **Add DSP stage** catalog and choose a compatible stage; it is added
-to the chain and opens its configuration. Press `s` for the scrollable
+The TUI manages each virtual PCM as an ordered DSP chain. Press `s` for the scrollable
 **Manage DSP stages** screen, where `Shift+↑` and `Shift+↓` reorder the
-selected stage, `enter` configures it, and `d` removes it. The catalog and
-manager are designed to grow as new stages are added. EQ bands, labels, ranges,
-and current values are always discovered from the ALSA CTL rather than assumed.
+selected stage, `enter` configures it, `d` removes it, and `a` opens the
+**Add DSP stage** catalog. The catalog and manager are designed to grow as new
+stages are added. Gain supports amplification and attenuation from `-24 dB` to
+`+12 dB` in `0.5 dB` steps. EQ bands, labels, ranges, and current values are
+always discovered from the ALSA CTL rather than assumed.
 EQ values are written immediately, but restart playback after changing them so
 the player opens a fresh ALSA PCM chain.
 
@@ -184,8 +184,10 @@ The profile list reports the active mode on the right:
   the physical stream's unused channels. It is effective bit-perfect for the
   stereo output, but not strict bit-perfectness for the complete stream.
 
-Crossfeed may be used with or without EQ, in either order. Crossfeed is DSP and
-therefore is never bit-perfect.
+Crossfeed and gain may be used with or without EQ, in any stored order. Both
+are DSP and therefore are never bit-perfect. Positive gain values can clip when
+the signal or a later EQ stage exceeds 0 dBFS; use negative gain as headroom
+when needed.
 
 The private `*_status_target` and `*_status` PCMs are implementation details.
 Applications must select the public PCM only, for example `dac_eq`; do not

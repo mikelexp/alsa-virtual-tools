@@ -22,6 +22,7 @@ type Screen =
   | 'equalizer'
   | 'crossfeed'
   | 'crossfeed-custom'
+  | 'gain'
   | 'help'
   | 'diagnostics'
   | 'new'
@@ -148,28 +149,6 @@ export function App({ service, report }: { service: ALSAChainService; report: De
     };
   }, [stdout]);
 
-  const openEqualizer = (selectedProfile: Profile) => {
-    if (!selectedProfile.enabled) {
-      setFeedback({
-        variant: 'warning',
-        title: 'PROFILE IS DISABLED',
-        message: 'Enable the profile before opening its equalizer controls.',
-      });
-    } else if (selectedProfile.eqEnabled !== false && !isBitperfect(selectedProfile)) {
-      setScreen('equalizer');
-    } else {
-      void service
-        .activateEqualizer(selectedProfile.id)
-        .then(async () => {
-          await refresh(true);
-          setScreen('equalizer');
-        })
-        .catch((error: Error) =>
-          setFeedback({ variant: 'error', title: 'EQ CHANGE FAILED', message: error.message }),
-        );
-    }
-  };
-
   const toggleBitperfect = (profile: Profile) => {
     void service
       .setBitperfect(profile.id, !isBitperfect(profile))
@@ -181,32 +160,6 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           message: error.message,
         }),
       );
-  };
-
-  const openCrossfeed = (selectedProfile: Profile) => {
-    if (!selectedProfile.enabled) {
-      setFeedback({
-        variant: 'warning',
-        title: 'PROFILE IS DISABLED',
-        message: 'Enable the profile before configuring crossfeed.',
-      });
-    } else if (!isBitperfect(selectedProfile)) {
-      setScreen('crossfeed');
-    } else {
-      void service
-        .setBitperfect(selectedProfile.id, false)
-        .then(() => {
-          setScreen('crossfeed');
-          void refresh(true);
-        })
-        .catch((error: Error) =>
-          setFeedback({
-            variant: 'error',
-            title: 'PLAYBACK MODE CHANGE FAILED',
-            message: error.message,
-          }),
-        );
-    }
   };
 
   useInput((input, key) => {
@@ -224,21 +177,18 @@ export function App({ service, report }: { service: ALSAChainService; report: De
       if (input === '?') setScreen('help');
       if (input === 'd' && profiles[selection]) setScreen('delete');
       if (input === 'i') setScreen('diagnostics');
-      if (input === 'm' && profiles[selection]) openEqualizer(profiles[selection]);
       if (input === 'b' && profiles[selection]) toggleBitperfect(profiles[selection]);
-      if (input === 'c' && profiles[selection]) openCrossfeed(profiles[selection]);
-      if (input === 'a' && profiles[selection]) setScreen('stage-catalog');
       if (input === 's' && profiles[selection]) setScreen('stage-manager');
     } else if (screen === 'detail') {
       if (key.escape) setScreen('list');
       if (input === 'e' && profile) setScreen('edit');
-      if (input === 'm' && profile) openEqualizer(profile);
       if (input === 'b' && profile) toggleBitperfect(profile);
-      if (input === 'c' && profile) openCrossfeed(profile);
       if (input === 'd' && profile) setScreen('delete');
-      if (input === 'a' && profile) setScreen('stage-catalog');
       if (input === 's' && profile) setScreen('stage-manager');
-    } else if (!['equalizer', 'crossfeed', 'crossfeed-custom'].includes(screen) && key.escape)
+    } else if (
+      !['equalizer', 'crossfeed', 'crossfeed-custom', 'gain'].includes(screen) &&
+      key.escape
+    )
       setScreen('list');
   });
 
@@ -334,6 +284,27 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           onBack={() => setScreen('crossfeed')}
         />
       )}
+      {screen === 'gain' && profile && (
+        <GainScreen
+          profile={profile}
+          onSave={(value) =>
+            service
+              .setGain(profile.id, value)
+              .then(() => {
+                setScreen('list');
+                void refresh(true);
+              })
+              .catch((error: Error) =>
+                setFeedback({
+                  variant: 'error',
+                  title: 'GAIN CHANGE FAILED',
+                  message: error.message,
+                }),
+              )
+          }
+          onBack={() => setScreen('list')}
+        />
+      )}
       {screen === 'help' && <Help />}
       {screen === 'stage-catalog' && profile && (
         <StageCatalog
@@ -346,7 +317,9 @@ export function App({ service, report }: { service: ALSAChainService; report: De
               .then(async () => {
                 await refresh(true);
                 setStageSelection(profile.stages.length);
-                setScreen(type === 'equalizer' ? 'equalizer' : 'crossfeed');
+                setScreen(
+                  type === 'equalizer' ? 'equalizer' : type === 'crossfeed' ? 'crossfeed' : 'gain',
+                );
               })
               .catch((error: Error) =>
                 setFeedback({
@@ -376,7 +349,14 @@ export function App({ service, report }: { service: ALSAChainService; report: De
           }}
           onConfigure={() => {
             const stage = profile.stages[stageSelection];
-            if (stage) setScreen(stage.type === 'equalizer' ? 'equalizer' : 'crossfeed');
+            if (stage)
+              setScreen(
+                stage.type === 'equalizer'
+                  ? 'equalizer'
+                  : stage.type === 'crossfeed'
+                    ? 'crossfeed'
+                    : 'gain',
+              );
           }}
           onRemove={() => {
             const stage = profile.stages[stageSelection];
@@ -433,6 +413,8 @@ export function App({ service, report }: { service: ALSAChainService; report: De
         <CrossfeedNavigation />
       ) : screen === 'crossfeed-custom' ? (
         <CrossfeedCustomNavigation />
+      ) : screen === 'gain' ? (
+        <GainNavigation />
       ) : screen === 'stage-manager' ? (
         <Box marginTop={1} gap={2} flexWrap="wrap">
           <KeyHint keyName="↑ / ↓" label="select stage" />
@@ -571,10 +553,7 @@ function Navigation() {
         <KeyHint keyName="n" label="new" />
         <KeyHint keyName="e" label="edit" />
         <KeyHint keyName="d" label="delete" />
-        <KeyHint keyName="m" label="equalizer" />
         <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
-        <KeyHint keyName="c" label="crossfeed" />
-        <KeyHint keyName="a" label="add DSP stage" />
         <KeyHint keyName="s" label="manage stages" />
       </Box>
       <Box gap={2} flexWrap="wrap">
@@ -591,13 +570,9 @@ function DetailNavigation() {
   return (
     <Box marginTop={1} gap={2} flexWrap="wrap">
       <KeyHint keyName="e" label="edit interface" />
-      <KeyHint keyName="m" label="equalizer" />
       <KeyHint keyName="b" label="switch BITPERFECT / PROCESSED" />
-      <KeyHint keyName="c" label="crossfeed" />
-      <KeyHint keyName="a" label="add DSP stage" />
       <KeyHint keyName="s" label="manage stages" />
       <KeyHint keyName="d" label="delete interface" />
-      <KeyHint keyName="x" label="remove EQ" />
       <KeyHint keyName="esc" label="back" />
     </Box>
   );
@@ -831,6 +806,121 @@ function CrossfeedCustomNavigation() {
       <KeyHint keyName="↑ / ↓" label="adjust value" />
       <KeyHint keyName="enter" label="next / apply" />
       <KeyHint keyName="esc" label="back" />
+    </Box>
+  );
+}
+
+function GainScreen({
+  profile,
+  onSave,
+  onBack,
+}: {
+  profile: Profile;
+  onSave: (value: number) => void;
+  onBack: () => void;
+}) {
+  const existing = profile.stages.find((stage) => stage.type === 'gain');
+  const [value, setValue] = useState(String(existing?.type === 'gain' ? existing.gainDb : 0));
+  const [field, setField] = useState(0);
+  const [cursor, setCursor] = useState(value.length);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useInput((input, key) => {
+    if (busy) return;
+    const editing = field === 0;
+    const backspace = key.backspace || input === '\b' || input === '\x7f';
+    if (key.escape) onBack();
+    else if (key.tab) {
+      setField((current) => (current + (key.shift ? -1 : 1) + 2) % 2);
+      setCursor(0);
+    } else if (key.leftArrow && editing) setCursor((position) => Math.max(0, position - 1));
+    else if (key.rightArrow && editing)
+      setCursor((position) => Math.min(value.length, position + 1));
+    else if (key.home && editing) setCursor(0);
+    else if (key.end && editing) setCursor(value.length);
+    else if (backspace && editing && cursor > 0) {
+      const nextCursor = cursor - 1;
+      setValue((current) => current.slice(0, nextCursor) + current.slice(cursor));
+      setCursor(nextCursor);
+    } else if (key.delete && editing) {
+      setValue((current) => current.slice(0, cursor) + current.slice(cursor + 1));
+    } else if (key.upArrow && editing) {
+      setValue(String(Math.min(12, Number(value || 0) + 0.5)));
+    } else if (key.downArrow && editing) {
+      setValue(String(Math.max(-24, Number(value || 0) - 0.5)));
+    } else if (key.return && field === 0) {
+      setField(1);
+      setCursor(0);
+    } else if (key.return) {
+      const gain = Number(value);
+      if (!Number.isFinite(gain) || gain < -24 || gain > 12)
+        return setError('Gain must be from -24 to +12 dB');
+      setBusy(true);
+      onSave(gain);
+    } else if (input && !key.ctrl && !key.meta && editing && /^[0-9.+-]$/.test(input)) {
+      if ((input !== '.' || !value.includes('.')) && (input !== '-' || cursor === 0)) {
+        setValue((current) => current.slice(0, cursor) + input + current.slice(cursor));
+        setCursor((position) => position + 1);
+      }
+    }
+  });
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Panel title="GAIN" color={ACCENT}>
+        <Box flexDirection="column" paddingY={1}>
+          <Text color={TEXT}>
+            Amplifies or attenuates the complete signal before the next DSP stage.
+          </Text>
+          <Text color={MUTED}>
+            Positive values amplify. Use negative values to compensate for EQ boosts.
+          </Text>
+        </Box>
+      </Panel>
+      <Panel title={profile.displayName.toUpperCase()} color="magenta">
+        <Box flexDirection="column" paddingY={1}>
+          <Box>
+            <Text color={field === 0 ? ACCENT : 'gray'} bold>
+              {field === 0 ? '> ' : '  '}
+            </Text>
+            <Text color={field === 0 ? 'white' : undefined}>Gain </Text>
+            {field === 0 ? (
+              <Text color="white">
+                {value.slice(0, cursor)}
+                <Text inverse color={ACCENT_BRIGHT}>
+                  {value[cursor] ?? ' '}
+                </Text>
+                {value.slice(cursor + 1)}
+              </Text>
+            ) : (
+              <Text>{value}</Text>
+            )}
+            <Text color={MUTED}> dB · -24 to +12</Text>
+          </Box>
+          <Box
+            marginTop={1}
+            backgroundColor={field === 1 ? '#203b2c' : SURFACE}
+            paddingX={2}
+            paddingY={1}
+          >
+            <Text color={field === 1 ? 'green' : 'gray'} bold>
+              {field === 1 ? '> ' : '  '}
+            </Text>
+            <Text color={field === 1 ? 'green' : undefined}>[ Apply gain ]</Text>
+          </Box>
+        </Box>
+      </Panel>
+      {error && <Text color="red">! {error}</Text>}
+    </Box>
+  );
+}
+
+function GainNavigation() {
+  return (
+    <Box marginTop={1} gap={2} flexWrap="wrap">
+      <KeyHint keyName="↑ / ↓" label="adjust 0.5 dB" />
+      <KeyHint keyName="tab" label="apply" />
+      <KeyHint keyName="enter" label="next / apply" />
+      <KeyHint keyName="esc" label="cancel" />
     </Box>
   );
 }
@@ -1110,8 +1200,8 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
           <InfoRow label="Controls" value={profile.controlsPath ?? '-'} />
           <Text color={MUTED}>Changes to a target affect new ALSA connections only.</Text>
           <Text color={MUTED}>
-            b switches BITPERFECT / PROCESSED; m and c activate processed mode. Restart playback
-            after changes.
+            b switches BITPERFECT / PROCESSED; s opens DSP stage management. Restart playback after
+            changes.
           </Text>
         </Box>
       </Panel>
@@ -1166,17 +1256,13 @@ function Help() {
           </Text>{' '}
           delete{' '}
           <Text color={ACCENT} bold>
-            m
-          </Text>{' '}
-          equalizer{' '}
-          <Text color={ACCENT} bold>
             b
           </Text>{' '}
           switch BITPERFECT / PROCESSED{' '}
           <Text color={ACCENT} bold>
-            c
+            s
           </Text>{' '}
-          crossfeed{' '}
+          manage DSP stages{' '}
           <Text color={ACCENT} bold>
             r
           </Text>{' '}
@@ -1280,6 +1366,14 @@ function StageCatalog({
               ? undefined
               : 'Install ladspa-bs2b first',
       },
+      {
+        type: 'gain',
+        title: 'Gain',
+        detail: 'Amplify or attenuate the complete signal from -24 to +12 dB.',
+        unavailable: profile.stages.some((stage) => stage.type === 'gain')
+          ? 'Already in this chain'
+          : undefined,
+      },
     ];
   const [selection, setSelection] = useState(0);
   useInput((input, key) => {
@@ -1375,7 +1469,9 @@ function StageManager({
                   <Text color={MUTED}>
                     {stage.type === 'crossfeed'
                       ? ` · ${typeof stage.settings === 'string' ? stage.settings : 'custom'}`
-                      : ' · CAPS Eq10'}
+                      : stage.type === 'gain'
+                        ? ` · ${stage.gainDb >= 0 ? '+' : ''}${stage.gainDb} dB`
+                        : ' · CAPS Eq10'}
                   </Text>
                 </Text>
               );

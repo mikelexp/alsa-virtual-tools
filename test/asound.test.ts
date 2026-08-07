@@ -13,6 +13,7 @@ const profile: Profile = {
   stages: [
     { id: 'eq', type: 'equalizer', ctlName: 'usb', controlsPath: '/tmp/usb.bin' },
     { id: 'crossfeed', type: 'crossfeed', settings: 'normal' },
+    { id: 'gain', type: 'gain', gainDb: 6 },
   ],
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -22,10 +23,13 @@ describe('ordered DSP chain', () => {
     const block = renderBlock([profile], '/caps.so', '/ladspa/bs2b.so', '/tmp/status');
     expect(block).toContain('pcm.usb_stage_01_eq');
     expect(block).toContain('pcm.usb_stage_02_crossfeed');
+    expect(block).toContain('pcm.usb_stage_03_gain');
+    expect(block).toContain('ttable {');
+    expect(block).toContain('0.0 1.9952623149688795');
     expect(block).toContain('slave.pcm "usb_stage_01_eq"');
     expect(block).toContain('type alsachain_status');
     expect(block).toContain('status_path "/tmp/status/usb.status"');
-    expect(block).toContain('ALSAChain EQ → Crossfeed: USB DAC');
+    expect(block).toContain('ALSAChain EQ → Crossfeed → Gain: USB DAC');
   });
   it('supports crossfeed before EQ', () => {
     const [eq, crossfeed] = profile.stages;
@@ -50,6 +54,7 @@ describe('ordered DSP chain', () => {
     expect(block).toContain('slave.pcm "plughw:CARD=TEST,DEV=0"');
     expect(block).not.toContain('type equal');
     expect(block).not.toContain('type ladspa');
+    expect(block).not.toContain('type route');
   });
   it('preserves external configuration around its managed block', () => {
     const value = replaceManagedBlock(

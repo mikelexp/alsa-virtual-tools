@@ -12,6 +12,7 @@ export const crossfeedCustom = z
   .strict();
 export const crossfeedSchema = z.union([crossfeedPreset, crossfeedCustom]);
 export type Crossfeed = z.infer<typeof crossfeedSchema>;
+export const gainDb = z.number().min(-24).max(12);
 
 const equalizerStageSchema = z
   .object({
@@ -28,13 +29,22 @@ const crossfeedStageSchema = z
     settings: crossfeedSchema,
   })
   .strict();
+const gainStageSchema = z
+  .object({
+    id: alsaName,
+    type: z.literal('gain'),
+    gainDb,
+  })
+  .strict();
 export const dspStageSchema = z.discriminatedUnion('type', [
   equalizerStageSchema,
   crossfeedStageSchema,
+  gainStageSchema,
 ]);
 export type DspStage = z.infer<typeof dspStageSchema>;
 export type EqualizerStage = z.infer<typeof equalizerStageSchema>;
 export type CrossfeedStage = z.infer<typeof crossfeedStageSchema>;
+export type GainStage = z.infer<typeof gainStageSchema>;
 
 export const profileSchema = z
   .object({
@@ -86,7 +96,7 @@ export const isBitperfect = (profile: Profile): boolean => profile.bitperfect;
 export const equalizerStage = (profile: Profile): EqualizerStage | undefined =>
   profile.stages.find((stage): stage is EqualizerStage => stage.type === 'equalizer');
 export const stageLabel = (stage: DspStage): string =>
-  stage.type === 'equalizer' ? 'EQ' : 'Crossfeed';
+  stage.type === 'equalizer' ? 'EQ' : stage.type === 'crossfeed' ? 'Crossfeed' : 'Gain';
 
 export function assertUniqueProfiles(profiles: Profile[]): void {
   const pcmNames = profiles.map((profile) => profile.pcmName);

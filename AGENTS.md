@@ -24,9 +24,9 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 
 ## Architecture
 
-- `src/model.ts`: Zod schemas, safe ALSA identifiers, ordered DSP-stage instances, and profile collision rules.
+- `src/model.ts`: Zod schemas, safe ALSA identifiers, ordered DSP-stage instances, and profile collision rules. DSP stages currently include Eq10, bs2b crossfeed, and gain (`-24` to `+12` dB).
 - `src/store.ts`: XDG state, atomic writes, `.asoundrc` backups/rollback, controls-directory safety.
-- `src/asound.ts`: the isolated generated block, ordered DSP-chain rendering, and external `type equal` detection.
+- `src/asound.ts`: the isolated generated block, ordered DSP-chain rendering, gain `route` matrices, and external `type equal` detection.
 - `src/alsa.ts`: `aplay -l` parsing, physical diagnostics, and managed profile-status record parsing.
 - `src/deps.ts`: executable/module/LADSPA validation and install suggestions only.
 - `src/service.ts`: transactional stage add/move/remove actions and integrated EQ CTL reads/writes.
@@ -46,6 +46,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - EQ graphs, both in the fullscreen editor and virtual-card list, use the eight partial-height Unicode blocks `▁▂▃▄▅▆▇█`. Preserve that shared visual scale instead of reverting to binary or coarse bars.
 - Do not show success-confirmation modals for normal in-place settings changes, including crossfeed; return to the relevant screen and reflect the new state. Reserve modals for errors, destructive actions, or information that needs acknowledgement.
 - Keep **Add DSP stage** and **Manage DSP stages** as fullscreen, height-aware lists: the stage catalog and an individual chain can grow beyond the terminal viewport.
+- From the profile list and detail screen, `s` is the only shortcut for opening DSP stage management. The `a` shortcut is available only inside **Manage DSP stages** to open the add-stage catalog.
 - Render stages in their saved signal order everywhere a profile is summarized. When a stage moves, move the selection with that same stage.
 - Use `Shift+↑` / `Shift+↓` as the visible reordering shortcut; `[` / `]` may remain as non-advertised aliases.
 
@@ -61,6 +62,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - The native plugin is userspace code installed at `/usr/lib/alsa-lib/libasound_module_pcm_alsachain_status.so`, never a kernel module. Keep `PKGBUILD`, release packaging, `scripts/install.sh`, dependency diagnostics, and README installation instructions synchronized when changing it.
 - Validate a generated CTL with `amixer -D <ctl> scontrols`; do not open a physical PCM merely to probe it.
 - `alsaequal` is DSP, so it is never bit-perfect. Physical `hw_params` alone do not reveal source bit depth or native sample rate.
+- Gain is DSP, rendered with an ALSA `route` PCM using a per-channel diagonal matrix. Positive values amplify and can clip; negative values provide headroom.
 - The profile list reports `EFFECTIVE BITPERFECT` when a stereo profile targets a physical PCM with a different channel count. ALSA preserves the audible stereo channels while padding the physical stream; this is not strict whole-stream bit-perfectness.
 - Preserve the `.asoundrc` symlink itself: write atomically to its resolved target and retain the link.
 - Controls files must remain inside the configured `controlsDir`; reject traversal and symlinks.

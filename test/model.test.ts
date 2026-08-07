@@ -20,6 +20,7 @@ describe('DSP stage model', () => {
         stages: [
           { id: 'eq', type: 'equalizer', ctlName: 'usb', controlsPath: '/tmp/usb.bin' },
           { id: 'crossfeed', type: 'crossfeed', settings: 'normal' },
+          { id: 'gain', type: 'gain', gainDb: 6 },
         ],
       }).success,
     ).toBe(true));
@@ -40,5 +41,19 @@ describe('DSP stage model', () => {
         stages: [{ id: 'crossfeed', type: 'crossfeed', settings: 'normal' }],
       }).success,
     ).toBe(false);
+  });
+  it('limits gain to the supported amplification and attenuation range', () => {
+    expect(
+      profileSchema.safeParse({
+        ...base,
+        stages: [{ id: 'gain', type: 'gain', gainDb: 12.5 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      profileSchema.safeParse({
+        ...base,
+        stages: [{ id: 'gain', type: 'gain', gainDb: -24 }],
+      }).success,
+    ).toBe(true);
   });
 });
