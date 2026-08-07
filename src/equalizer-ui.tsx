@@ -50,6 +50,8 @@ export function EqualizerScreen({
   const bandsRef = useRef<EqualizerBand[]>([]);
   const savedBandsRef = useRef<EqualizerBand[]>([]);
   const savingRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -69,10 +71,59 @@ export function EqualizerScreen({
 
   useEffect(() => {
     void load();
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [profile.id]);
 
+  const pendingChanges = () =>
+    bandsRef.current.flatMap((band) => {
+      const savedBand = savedBandsRef.current.find(
+        (candidate) => candidate.control === band.control,
+      );
+      return savedBand && savedBand.value !== band.value ? [[savedBand, band.value] as const] : [];
+    });
+
+  const persistChanges = async (): Promise<boolean> => {
+    if (savePromiseRef.current) {
+      const saved = await savePromiseRef.current;
+      return saved && pendingChanges().length > 0 ? persistChanges() : saved;
+    }
+    const changes = pendingChanges();
+    if (changes.length === 0) return true;
+    const nextBands = bandsRef.current;
+    const savePromise = (async () => {
+      savingRef.current = true;
+      setSaving(true);
+      try {
+        await Promise.all(
+          changes.map(([band, value]) => service.setEqualizerBand(profile, band, value)),
+        );
+        savedBandsRef.current = nextBands;
+        onBandsChange(nextBands);
+        return true;
+      } catch (saveError: unknown) {
+        onError(saveError instanceof Error ? saveError.message : String(saveError));
+        return false;
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+        savePromiseRef.current = null;
+      }
+    })();
+    savePromiseRef.current = savePromise;
+    return savePromise;
+  };
+
+  const scheduleSave = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = undefined;
+      void persistChanges();
+    }, 150);
+  };
+
   const setSelectedValue = (requestedValue: number) => {
-    if (savingRef.current) return;
     const band = bandsRef.current[selection];
     if (!band) return;
     const value = clampBandValue(band, requestedValue);
@@ -85,10 +136,11 @@ export function EqualizerScreen({
     );
     bandsRef.current = nextBands;
     setBands(nextBands);
+    scheduleSave();
   };
 
   const resetEqualizer = () => {
-    if (savingRef.current || bandsRef.current.length === 0) return;
+    if (bandsRef.current.length === 0) return;
     const previousBands = bandsRef.current;
     const nextBands = previousBands.map((band) => {
       const value = flatBandValue(band);
@@ -97,35 +149,17 @@ export function EqualizerScreen({
     if (nextBands.every((band, index) => band.value === previousBands[index]?.value)) return;
     bandsRef.current = nextBands;
     setBands(nextBands);
+    scheduleSave();
   };
 
   const saveAndBack = () => {
-    if (savingRef.current) return;
-    const savedBands = savedBandsRef.current;
-    const nextBands = bandsRef.current;
-    const changes = nextBands.flatMap((band) => {
-      const savedBand = savedBands.find((candidate) => candidate.control === band.control);
-      return savedBand && savedBand.value !== band.value ? [[savedBand, band.value] as const] : [];
-    });
-    if (changes.length === 0) {
-      onBack();
-      return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
     }
-    savingRef.current = true;
-    setSaving(true);
-    void Promise.all(changes.map(([band, value]) => service.setEqualizerBand(profile, band, value)))
-      .then(() => {
-        savedBandsRef.current = nextBands;
-        onBandsChange(nextBands);
-        onBack();
-      })
-      .catch((saveError: unknown) => {
-        onError(saveError instanceof Error ? saveError.message : String(saveError));
-      })
-      .finally(() => {
-        savingRef.current = false;
-        setSaving(false);
-      });
+    void persistChanges().then((saved) => {
+      if (saved) onBack();
+    });
   };
 
   useInput(
@@ -138,11 +172,11 @@ export function EqualizerScreen({
         if (!savingRef.current) void load();
         return;
       }
-      if (input === 'f' && !loading && !savingRef.current) {
+      if (input === 'f' && !loading) {
         resetEqualizer();
         return;
       }
-      if (loading || error || savingRef.current || bands.length === 0) return;
+      if (loading || error || bands.length === 0) return;
       if (key.leftArrow) setSelection((value) => Math.max(0, value - 1));
       if (key.rightArrow) setSelection((value) => Math.min(bandsRef.current.length - 1, value + 1));
       const band = bandsRef.current[selection];
@@ -224,10 +258,10 @@ export function EqualizerScreen({
             </Text>{' '}
             {formatEqualizerGain(bands[selection])}
           </Text>
-          <Text color={MUTED}>changes save when leaving this screen</Text>
+          <Text color={MUTED}>restart playback to apply · esc saves and goes back</Text>
         </Box>
       )}
-      <Text color={MUTED}>↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · esc save & back</Text>
+      <Text color={MUTED}>↑ boost · ↓ cut · shift ±5 dB · f reset to Flat · esc back</Text>
     </Box>
   );
 }

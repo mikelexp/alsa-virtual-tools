@@ -27,6 +27,10 @@ async function exists(file: string): Promise<boolean> {
     return false;
   }
 }
+async function loadable(runner: CommandRunner, file: string): Promise<boolean> {
+  const result = await runner.run('ldd', ['-r', file]);
+  return !`${result.stdout}\n${result.stderr}`.includes('undefined symbol:');
+}
 export async function checkDependencies(
   runner: CommandRunner,
   env = process.env,
@@ -54,14 +58,23 @@ export async function checkDependencies(
   const equalModules = await Promise.all(
     equalDirectories.map(async (directory) => ({
       directory,
-      ok: await Promise.all(
-        ['libasound_module_pcm_equal.so', 'libasound_module_ctl_equal.so'].map((module) =>
-          exists(path.join(directory, module)),
-        ),
-      ).then((modules) => modules.every(Boolean)),
+      modules: await Promise.all(
+        ['libasound_module_pcm_equal.so', 'libasound_module_ctl_equal.so'].map(async (module) => {
+          const file = path.join(directory, module);
+          return { file, exists: await exists(file) };
+        }),
+      ),
     })),
   );
-  const equalDirectory = equalModules.find((candidate) => candidate.ok)?.directory;
+  const equalCandidate = equalModules.find((candidate) =>
+    candidate.modules.every((module) => module.exists),
+  );
+  const equalDirectory = equalCandidate?.directory;
+  const equalLoadable = equalCandidate
+    ? (
+        await Promise.all(equalCandidate.modules.map((module) => loadable(runner, module.file)))
+      ).every(Boolean)
+    : false;
   const statusModule = await Promise.all(
     equalDirectories.map(async (directory) => ({
       directory,
@@ -98,8 +111,12 @@ export async function checkDependencies(
     {
       name: 'alsaequal PCM/CTL modules',
       purpose: 'Install the ALSA equal PCM and CTL modules',
-      ok: Boolean(equalDirectory),
-      detail: equalDirectory ?? 'Not found in ALSA module paths',
+      ok: Boolean(equalDirectory) && equalLoadable,
+      detail: !equalDirectory
+        ? 'Not found in ALSA module paths'
+        : equalLoadable
+          ? equalDirectory
+          : `${equalDirectory}: unresolved libasound symbols; rebuild alsaequal`,
     },
     {
       name: 'ALSAChain status PCM module',

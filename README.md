@@ -33,8 +33,9 @@ it, and run:
 ./install.sh
 ```
 
-The dependency check locates `caps.so`, checks command executables, the
-conventional equal PCM/CTL modules, and the ALSAChain PCM status module.
+The dependency check locates `caps.so`, checks command executables, verifies
+that the conventional equal PCM/CTL modules have no unresolved `libasound`
+symbols, and checks the ALSAChain PCM status module.
 
 After upgrading from a version without the status module, regenerate the managed
 block and restart any player that already has a profile open:
@@ -158,6 +159,8 @@ to the chain and opens its configuration. Press `s` for the scrollable
 selected stage, `enter` configures it, and `d` removes it. The catalog and
 manager are designed to grow as new stages are added. EQ bands, labels, ranges,
 and current values are always discovered from the ALSA CTL rather than assumed.
+EQ values are written immediately, but restart playback after changing them so
+the player opens a fresh ALSA PCM chain.
 
 ## Generated configuration
 
