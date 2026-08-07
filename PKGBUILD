@@ -9,7 +9,7 @@ url='https://github.com/mikelexp/alsachain'
 license=('custom')
 depends=('glibc' 'alsa-lib' 'alsa-utils' 'caps' 'alsaequal')
 source=("${url}/releases/download/v${pkgver}/alsachain-${pkgver}-linux-${CARCH}.tar.gz")
-sha256sums=('4afa38e7ee5962162e9a97d58801582fd9771207cfa6c102279be85c5c994a53')
+sha256sums=('6ef8c950bfa85a978458a04cce41ed1f819ff8b2b8c8539d2d0f922b29ad3d8d')
 
 package() {
   install -Dm755 "${srcdir}/alsachain" "${pkgdir}/usr/bin/alsachain"
