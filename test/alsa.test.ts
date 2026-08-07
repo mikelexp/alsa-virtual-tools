@@ -21,6 +21,7 @@ describe('ALSA parsers', () => {
     });
     expect(parseStatus('state: RUNNING\n')).toBe('Playing');
     expect(parseStatus('state: XRUN\n')).toBe('XRUN');
+    expect(parseStatus('closed\n')).toBe('Inactive');
   });
   it.each([
     ['S16_LE', 16, 16],

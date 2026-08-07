@@ -958,7 +958,7 @@ function ProfileRow({
           <Text color={MUTED} wrap="truncate">
             {' '}
             {stageChain || 'none'}
-            {isBitperfect(profile) && stageChain ? ' · bypassed' : ''}
+            {isBitperfect(profile) && stageChain ? ' · inactive in BITPERFECT' : ''}
           </Text>
         </Box>
       </Box>
@@ -1061,15 +1061,29 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
       </Panel>
       <Panel title="PLAYBACK" color="magenta">
         <Box flexDirection="column" paddingY={1}>
-          <InfoRow label="Physical" value={`${state?.rate ?? '-'} ${state?.format ?? '-'}`} />
-          <InfoRow label="Channels" value={state?.channels ? `${state.channels} ch` : '-'} />
+          <InfoRow
+            label="Physical"
+            value={
+              state?.rate && state.format ? `${state.rate} ${state.format}` : 'No active stream'
+            }
+          />
+          <InfoRow
+            label="Channels"
+            value={
+              state?.channels
+                ? `${state.channels} channels`
+                : state?.hardwareChannels
+                  ? `${state.hardwareChannels} physical channels`
+                  : 'Not available'
+            }
+          />
           <InfoRow
             label="Processing"
             value={
               isBitperfect(profile)
                 ? channelAdapted
                   ? 'EFFECTIVE BITPERFECT - stereo preserved; ALSA pads physical channels'
-                  : 'BYPASS - no DSP; format/rate adaptation is not observable here'
+                  : 'BITPERFECT - no DSP; format/rate adaptation is not observable here'
                 : profile.eqEnabled === false
                   ? profile.crossfeed
                     ? `CROSSFEED - ${profile.crossfeed} / DSP active`

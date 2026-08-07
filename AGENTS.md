@@ -50,7 +50,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Names must match `[a-zA-Z][a-zA-Z0-9_-]*`.
 - Use stable physical targets such as `plughw:CARD=<card-id>,DEV=<n>`, never volatile card indexes.
 - The public PCM needs an ALSA `hint` block so applications using `snd_device_name_hint`/`aplay -L` can enumerate it.
-- Public bypass PCMs use `type plug` over the stored `plughw` target so normal ALSA clients can negotiate the physical device's channel, rate, and format constraints.
+- Public BITPERFECT PCMs use `type plug` over the stored `plughw` target so normal ALSA clients can negotiate the physical device's channel, rate, and format constraints.
 - Validate a generated CTL with `amixer -D <ctl> scontrols`; do not open a physical PCM merely to probe it.
 - `alsaequal` is DSP, so it is never bit-perfect. Physical `hw_params` alone do not reveal source bit depth or native sample rate.
 - The profile list reports `EFFECTIVE BITPERFECT` when a stereo profile targets a physical PCM with a different channel count. ALSA preserves the audible stereo channels while padding the physical stream; this is not strict whole-stream bit-perfectness.

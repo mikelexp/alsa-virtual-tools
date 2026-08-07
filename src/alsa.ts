@@ -88,7 +88,7 @@ export function parsePlaybackChannels(text: string): number | undefined {
   return channels ? Number(channels) : undefined;
 }
 export function parseStatus(text: string): PlaybackState['state'] {
-  const value = text.match(/^state:\s*(\S+)/m)?.[1];
+  const value = text.match(/^state:\s*(\S+)/m)?.[1] ?? text.trim();
   return value === 'RUNNING'
     ? 'Playing'
     : value === 'PREPARED'
@@ -99,7 +99,9 @@ export function parseStatus(text: string): PlaybackState['state'] {
           ? 'XRUN'
           : value === 'OPEN' || value === 'SETUP'
             ? 'Inactive'
-            : 'Unknown';
+            : value === 'closed'
+              ? 'Inactive'
+              : 'Unknown';
 }
 export async function discoverDevices(runner: CommandRunner): Promise<Device[]> {
   const result = await runner.run('aplay', ['-l']);

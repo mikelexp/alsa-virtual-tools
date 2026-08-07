@@ -97,7 +97,7 @@ and current values are always discovered from the ALSA CTL rather than assumed.
 
 In the TUI, select a profile and press `b` to switch between **PROCESSED** and
 **BITPERFECT**. Processed mode renders its stored DSP stages in their configured
-order. BITPERFECT bypasses every stage and routes the public PCM through `plug`
+order. BITPERFECT omits every stage and routes the public PCM through `plug`
 and the stable `plughw:CARD=...,DEV=...` target, so ALSA clients can negotiate
 the physical device's supported format, rate, and channel layout. Adding a
 stage returns the profile to Processed mode. Stop and restart playback after

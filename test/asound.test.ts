@@ -36,7 +36,7 @@ describe('ordered DSP chain', () => {
     expect(block).toContain('pcm.usb_stage_01_crossfeed');
     expect(block).toContain('slave.pcm "usb_stage_01_crossfeed"');
   });
-  it('bypasses every stage in BITPERFECT mode', () => {
+  it('omits every stage in BITPERFECT mode', () => {
     const block = renderBlock([{ ...profile, bitperfect: true }], '/caps.so', '/ladspa/bs2b.so');
     expect(block).toContain('type plug');
     expect(block).toContain('slave.pcm "plughw:CARD=TEST,DEV=0"');
