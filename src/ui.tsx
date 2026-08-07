@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 import type { Device, PlaybackState } from './alsa.js';
-import { physicalStatus } from './alsa.js';
+import { hasChannelAdaptation, physicalStatus } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
 import { equalizerBarRows, equalizerCutBarRows, type EqualizerBand } from './equalizer.js';
@@ -919,6 +919,7 @@ function ProfileRow({
   const equalizerWidth = Math.max(16, Math.min(42, Math.floor(width * 0.4)));
   const hasEqualizer = profile.stages.some((stage) => stage.type === 'equalizer');
   const stageChain = profile.stages.map(stageLabel).join(' → ');
+  const channelAdapted = hasChannelAdaptation(profile.channels, state);
   return (
     <Box
       minHeight={5}
@@ -965,7 +966,7 @@ function ProfileRow({
         <ProfileEqualizer bands={equalizer} width={equalizerWidth} selected={selected} />
       )}
       <Box
-        width={15}
+        width={23}
         flexDirection="column"
         alignItems="flex-end"
         justifyContent="center"
@@ -975,7 +976,11 @@ function ProfileRow({
         {profile.enabled && (
           <Badge
             label={
-              isBitperfect(profile) ? 'BITPERFECT' : profile.stages.length ? 'DSP' : 'PROCESSED'
+              isBitperfect(profile)
+                ? channelAdapted
+                  ? 'EFFECTIVE BITPERFECT'
+                  : 'BITPERFECT'
+                : 'PROCESSED'
             }
             color={isBitperfect(profile) ? 'green' : 'yellow'}
           />
@@ -1043,6 +1048,7 @@ function ProfileEqualizer({
 
 function Details({ profile, state }: { profile: Profile; state?: PlaybackState }) {
   const color = statusColor(state?.state);
+  const channelAdapted = hasChannelAdaptation(profile.channels, state);
   return (
     <Box flexDirection="column" gap={1}>
       <Panel title={profile.displayName} color={ACCENT}>
@@ -1061,7 +1067,9 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
             label="Processing"
             value={
               isBitperfect(profile)
-                ? 'BITPERFECT - direct path'
+                ? channelAdapted
+                  ? 'EFFECTIVE BITPERFECT - stereo preserved; ALSA pads physical channels'
+                  : 'BYPASS - no DSP; format/rate adaptation is not observable here'
                 : profile.eqEnabled === false
                   ? profile.crossfeed
                     ? `CROSSFEED - ${profile.crossfeed} / DSP active`
@@ -1070,7 +1078,7 @@ function Details({ profile, state }: { profile: Profile; state?: PlaybackState }
                     ? `EQ + CROSSFEED - ${profile.crossfeed} / DSP active`
                     : 'EQ - alsaequal active'
             }
-            valueColor={isBitperfect(profile) ? 'green' : 'yellow'}
+            valueColor={isBitperfect(profile) && !channelAdapted ? 'green' : 'yellow'}
           />
         </Box>
       </Panel>

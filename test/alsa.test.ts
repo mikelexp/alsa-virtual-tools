@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseAplayList, parseCards, parseHwParams, parseStatus } from '../src/alsa.js';
+import {
+  hasChannelAdaptation,
+  parseAplayList,
+  parseCards,
+  parseHwParams,
+  parsePlaybackChannels,
+  parseStatus,
+} from '../src/alsa.js';
 describe('ALSA parsers', () => {
   it('parses playback hardware without capture entries', () => {
     const devices = parseAplayList(
@@ -28,5 +35,17 @@ describe('ALSA parsers', () => {
       rate: '96000',
       channels: 2,
     });
+  });
+  it('detects when ALSA must adapt the configured channel count', () => {
+    expect(hasChannelAdaptation(2, { state: 'Playing', channels: 4 })).toBe(true);
+    expect(hasChannelAdaptation(2, { state: 'Playing', channels: 2 })).toBe(false);
+    expect(hasChannelAdaptation(2, { state: 'Inactive', hardwareChannels: 4 })).toBe(true);
+  });
+  it('reads the physical playback channel count while no stream is active', () => {
+    expect(
+      parsePlaybackChannels(
+        'Playback:\n  Interface 1\n    Format: S32_LE\n    Channels: 4\n\nCapture:\n',
+      ),
+    ).toBe(4);
   });
 });

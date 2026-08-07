@@ -19,9 +19,16 @@ export interface PlaybackState {
   logicalBits?: number;
   containerBits?: number;
   channels?: number;
+  hardwareChannels?: number;
   bufferSize?: string;
   periodSize?: string;
 }
+
+export function hasChannelAdaptation(channels: number, state: PlaybackState | undefined): boolean {
+  const hardwareChannels = state?.channels ?? state?.hardwareChannels;
+  return hardwareChannels !== undefined && hardwareChannels !== channels;
+}
+
 export function parseAplayList(text: string): Device[] {
   const lines = text.split('\n');
   const devices: Device[] = [];
@@ -75,6 +82,11 @@ export function parseHwParams(text: string): Omit<PlaybackState, 'state'> {
     periodSize: lookup('period_size'),
   };
 }
+export function parsePlaybackChannels(text: string): number | undefined {
+  const playback = text.match(/Playback:\n([\s\S]*?)(?:\nCapture:|$)/)?.[1];
+  const channels = playback?.match(/^\s*Channels:\s*(\d+)\s*$/m)?.[1];
+  return channels ? Number(channels) : undefined;
+}
 export function parseStatus(text: string): PlaybackState['state'] {
   const value = text.match(/^state:\s*(\S+)/m)?.[1];
   return value === 'RUNNING'
@@ -97,7 +109,8 @@ export async function physicalStatus(
   device: Device,
   procRoot = '/proc/asound',
 ): Promise<PlaybackState> {
-  const dir = path.join(procRoot, `card${device.cardIndex}`, `pcm${device.device}p`);
+  const cardDir = path.join(procRoot, `card${device.cardIndex}`);
+  const dir = path.join(cardDir, `pcm${device.device}p`);
   try {
     const subs = await readdir(dir);
     const statusFiles = subs.filter((name) => /^sub\d+$/.test(name));
@@ -111,7 +124,14 @@ export async function physicalStatus(
       }),
     );
     const live = states.find((x) => x.status !== 'Inactive') ?? states[0];
-    return { state: live?.status ?? 'Unknown', ...parseHwParams(live?.params ?? '') };
+    const hardwareChannels = await readFile(path.join(cardDir, 'stream0'), 'utf8')
+      .then(parsePlaybackChannels)
+      .catch(() => undefined);
+    return {
+      state: live?.status ?? 'Unknown',
+      ...parseHwParams(live?.params ?? ''),
+      hardwareChannels,
+    };
   } catch {
     return { state: 'Unavailable' };
   }
