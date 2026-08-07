@@ -10,13 +10,15 @@ RELEASE_DIR="${DIST_DIR}/release"
 TARBALL="${DIST_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz"
 
 test -x "${DIST_DIR}/${APP_NAME}"
+test -f "${DIST_DIR}/libasound_module_pcm_alsachain_status.so"
 rm -rf "${RELEASE_DIR}"
 mkdir -p "${RELEASE_DIR}"
 
 install -m 755 "${DIST_DIR}/${APP_NAME}" "${RELEASE_DIR}/${APP_NAME}"
+install -m 755 "${DIST_DIR}/libasound_module_pcm_alsachain_status.so" "${RELEASE_DIR}/libasound_module_pcm_alsachain_status.so"
 install -m 755 "${ROOT_DIR}/scripts/install.sh" "${RELEASE_DIR}/install.sh"
 install -m 644 "${ROOT_DIR}/README.md" "${RELEASE_DIR}/README.md"
 
-tar -C "${RELEASE_DIR}" -czf "${TARBALL}" "${APP_NAME}" install.sh README.md
+tar -C "${RELEASE_DIR}" -czf "${TARBALL}" "${APP_NAME}" libasound_module_pcm_alsachain_status.so install.sh README.md
 sha256sum "${TARBALL}" > "${DIST_DIR}/SHA256SUMS"
 printf 'Created release archive: %s\n' "${TARBALL}"

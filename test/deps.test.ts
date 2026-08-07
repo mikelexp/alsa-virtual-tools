@@ -15,6 +15,9 @@ describe('dependency check', () => {
     expect(
       report.dependencies.find((dependency) => dependency.name === 'alsaequal PCM/CTL modules'),
     ).toBeDefined();
+    expect(
+      report.dependencies.find((dependency) => dependency.name === 'ALSAChain status PCM module'),
+    ).toBeDefined();
     expect(report.dependencies.some((dependency) => dependency.name === 'QasMixer')).toBe(false);
   });
 });

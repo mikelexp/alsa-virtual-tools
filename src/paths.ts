@@ -8,6 +8,7 @@ export interface Paths {
   cacheDir: string;
   configFile: string;
   controlsDir: string;
+  playbackStatusDir: string;
   backupsDir: string;
   logFile: string;
   asoundrc: string;
@@ -25,6 +26,7 @@ export function getPaths(env: NodeJS.ProcessEnv = process.env): Paths {
     cacheDir: path.join(cacheHome, 'alsachain'),
     configFile: path.join(configDir, 'config.json'),
     controlsDir: path.join(configDir, 'controls'),
+    playbackStatusDir: path.join(stateHome, 'alsachain', 'playback'),
     backupsDir: path.join(stateHome, 'alsachain', 'backups'),
     logFile: path.join(stateHome, 'alsachain', 'alsachain.log'),
     asoundrc: path.join(home, '.asoundrc'),

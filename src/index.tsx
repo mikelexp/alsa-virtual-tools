@@ -6,7 +6,6 @@ import { systemRunner } from './runner.js';
 import { ALSAChainService } from './service.js';
 import { checkDependencies } from './deps.js';
 import { renderBlock } from './asound.js';
-import { physicalStatus } from './alsa.js';
 import { App } from './ui.js';
 
 const service = new ALSAChainService(getPaths(), systemRunner);
@@ -50,6 +49,7 @@ async function main(): Promise<void> {
         (await service.list()).filter((p) => p.enabled),
         report.capsPath ?? '',
         report.crossfeedPath ?? '',
+        service.paths.playbackStatusDir,
       ),
     );
     return;
@@ -57,12 +57,11 @@ async function main(): Promise<void> {
   const profile = (await service.list()).find((p) => p.id === target || p.pcmName === target);
   if (!profile) throw new Error(`Unknown profile: ${target ?? ''}`);
   if (command === 'status') {
-    const device = (await service.devices()).find((d) => d.target === profile.target);
     console.log(
       JSON.stringify(
         {
           profile: profile.pcmName,
-          status: device ? await physicalStatus(device) : { state: 'Unavailable' },
+          status: await service.playbackStatus(profile),
         },
         null,
         2,

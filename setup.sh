@@ -14,5 +14,6 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 pnpm install
+make -C native
 pnpm build
 printf '%s\n' 'Setup complete. Run ./run.sh doctor before creating any interface.'

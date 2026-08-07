@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { CommandRunner } from './runner.js';
 
@@ -102,6 +102,36 @@ export function parseStatus(text: string): PlaybackState['state'] {
             : value === 'closed'
               ? 'Inactive'
               : 'Unknown';
+}
+export function parseProfileStatus(text: string): PlaybackState {
+  const state = text.match(/^state:\s*(\S+)/m)?.[1];
+  const allowed: PlaybackState['state'][] = ['Inactive', 'Prepared', 'Playing', 'Paused', 'XRUN'];
+  return {
+    state: allowed.includes(state as PlaybackState['state'])
+      ? (state as PlaybackState['state'])
+      : 'Unknown',
+    ...parseHwParams(text),
+  };
+}
+export async function profileStatus(statusPath: string): Promise<PlaybackState> {
+  try {
+    const text = await readFile(statusPath, 'utf8');
+    const pid = Number(text.match(/^pid:\s*(\d+)$/m)?.[1]);
+    if (!Number.isSafeInteger(pid) || pid < 1) return { state: 'Unknown' };
+    try {
+      process.kill(pid, 0);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') {
+        await unlink(statusPath).catch(() => undefined);
+        return { state: 'Inactive' };
+      }
+    }
+    return parseProfileStatus(text);
+  } catch (error: unknown) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? { state: 'Inactive' }
+      : { state: 'Unavailable' };
+  }
 }
 export async function discoverDevices(runner: CommandRunner): Promise<Device[]> {
   const result = await runner.run('aplay', ['-l']);

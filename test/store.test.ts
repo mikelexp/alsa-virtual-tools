@@ -25,6 +25,7 @@ async function fixture() {
     cacheDir: path.join(home, '.cache'),
     configFile: path.join(configDir, 'config.json'),
     controlsDir: path.join(configDir, 'controls'),
+    playbackStatusDir: path.join(home, '.state', 'playback'),
     backupsDir: path.join(home, '.state', 'backups'),
     logFile: path.join(home, '.state', 'log'),
     asoundrc: path.join(home, '.asoundrc'),

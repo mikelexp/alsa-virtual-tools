@@ -62,6 +62,13 @@ export async function checkDependencies(
     })),
   );
   const equalDirectory = equalModules.find((candidate) => candidate.ok)?.directory;
+  const statusModule = await Promise.all(
+    equalDirectories.map(async (directory) => ({
+      directory,
+      ok: await exists(path.join(directory, 'libasound_module_pcm_alsachain_status.so')),
+    })),
+  );
+  const statusDirectory = statusModule.find((candidate) => candidate.ok)?.directory;
   const nodeCompatible = Number(process.versions.node.split('.')[0]) >= 22;
   const bunCompatible = Boolean(process.versions.bun);
   const runtimeCompatible = nodeCompatible || bunCompatible;
@@ -95,6 +102,12 @@ export async function checkDependencies(
       detail: equalDirectory ?? 'Not found in ALSA module paths',
     },
     {
+      name: 'ALSAChain status PCM module',
+      purpose: 'Track the virtual PCM that is actively playing',
+      ok: Boolean(statusDirectory),
+      detail: statusDirectory ?? 'Not installed; run make install-native',
+    },
+    {
       name: 'caps.so',
       purpose: 'Provide CAPS Eq10 LADSPA DSP',
       ok: Boolean(capsPath),
@@ -126,6 +139,7 @@ export async function checkDependencies(
       `sudo pacman -S alsa-utils caps`,
       `${helper ?? '<AUR-helper>'} -S alsaequal`,
       `${helper ?? '<AUR-helper>'} -S ladspa-bs2b`,
+      `sudo make install-native`,
     ],
   };
 }

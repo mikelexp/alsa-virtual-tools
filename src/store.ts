@@ -99,6 +99,7 @@ export class Store {
   ): Promise<void> {
     await this.assertControlsIsolation(config.profiles);
     await mkdir(this.paths.controlsDir, { recursive: true, mode: 0o700 });
+    await mkdir(this.paths.playbackStatusDir, { recursive: true, mode: 0o700 });
     let original = '';
     let target = this.paths.asoundrc;
     try {
@@ -117,7 +118,10 @@ export class Store {
     try {
       await atomicWrite(
         target,
-        replaceManagedBlock(original, renderBlock(config.profiles, capsPath, crossfeedPath)),
+        replaceManagedBlock(
+          original,
+          renderBlock(config.profiles, capsPath, crossfeedPath, this.paths.playbackStatusDir),
+        ),
       );
       if (!(await validate())) throw new Error('Generated ALSA configuration did not validate');
       await this.pruneBackups();

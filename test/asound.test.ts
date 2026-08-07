@@ -19,10 +19,12 @@ const profile: Profile = {
 };
 describe('ordered DSP chain', () => {
   it('renders every stage in stored signal order', () => {
-    const block = renderBlock([profile], '/caps.so', '/ladspa/bs2b.so');
+    const block = renderBlock([profile], '/caps.so', '/ladspa/bs2b.so', '/tmp/status');
     expect(block).toContain('pcm.usb_stage_01_eq');
     expect(block).toContain('pcm.usb_stage_02_crossfeed');
     expect(block).toContain('slave.pcm "usb_stage_01_eq"');
+    expect(block).toContain('type alsachain_status');
+    expect(block).toContain('status_path "/tmp/status/usb.status"');
     expect(block).toContain('ALSAChain EQ → Crossfeed: USB DAC');
   });
   it('supports crossfeed before EQ', () => {
@@ -32,19 +34,28 @@ describe('ordered DSP chain', () => {
       [{ ...profile, stages: [crossfeed, eq] }],
       '/caps.so',
       '/ladspa/bs2b.so',
+      '/tmp/status',
     );
     expect(block).toContain('pcm.usb_stage_01_crossfeed');
     expect(block).toContain('slave.pcm "usb_stage_01_crossfeed"');
   });
   it('omits every stage in BITPERFECT mode', () => {
-    const block = renderBlock([{ ...profile, bitperfect: true }], '/caps.so', '/ladspa/bs2b.so');
+    const block = renderBlock(
+      [{ ...profile, bitperfect: true }],
+      '/caps.so',
+      '/ladspa/bs2b.so',
+      '/tmp/status',
+    );
     expect(block).toContain('type plug');
     expect(block).toContain('slave.pcm "plughw:CARD=TEST,DEV=0"');
     expect(block).not.toContain('type equal');
     expect(block).not.toContain('type ladspa');
   });
   it('preserves external configuration around its managed block', () => {
-    const value = replaceManagedBlock('# external\n', renderBlock([], '/caps.so'));
+    const value = replaceManagedBlock(
+      '# external\n',
+      renderBlock([], '/caps.so', '', '/tmp/status'),
+    );
     expect(value.startsWith('# external\n')).toBe(true);
   });
 });

@@ -9,9 +9,18 @@ paru -S alsachain-bin
 alsachain doctor
 ```
 
+The AUR package installs both components automatically:
+
+```text
+/usr/bin/alsachain
+/usr/lib/alsa-lib/libasound_module_pcm_alsachain_status.so
+```
+
 The release binary includes its JavaScript runtime and npm dependencies. It does
 not include system ALSA components, which remain package dependencies:
-`alsa-utils`, `caps`, and `alsaequal`.
+`alsa-lib`, `alsa-utils`, `caps`, and `alsaequal`. The release also contains
+the ALSAChain PCM status module; `install.sh` installs it into ALSA's module
+directory and asks for `sudo` only for that step.
 
 Headphone crossfeed is optional. Install `ladspa-bs2b` from the AUR when you
 want to enable it; ALSAChain reports it separately and does not treat its
@@ -24,7 +33,52 @@ it, and run:
 ./install.sh
 ```
 
-The dependency check locates `caps.so`, checks command executables and the conventional equal PCM/CTL modules. It reports missing pieces and suggested commands, but it never installs packages or invokes `sudo`.
+The dependency check locates `caps.so`, checks command executables, the
+conventional equal PCM/CTL modules, and the ALSAChain PCM status module.
+
+After upgrading from a version without the status module, regenerate the managed
+block and restart any player that already has a profile open:
+
+```bash
+alsachain repair
+```
+
+## Playback Status Module
+
+`libasound_module_pcm_alsachain_status.so` is an ALSA userspace PCM plugin, not
+a kernel module. ALSA loads it dynamically only when a client opens an
+ALSAChain public PCM. It needs no `modprobe`, DKMS, reboot, or kernel rebuild.
+
+Every enabled profile has its own wrapper in the generated block:
+
+```text
+application -> public plug PCM -> alsachain_status -> private plug PCM -> DSP stages -> plughw target
+```
+
+The wrapper receives the virtual PCM lifecycle callbacks. It writes the profile
+state to:
+
+```text
+$XDG_STATE_HOME/alsachain/playback/<profile-id>.status
+```
+
+When `XDG_STATE_HOME` is unset, the location is
+`~/.local/state/alsachain/playback/`. A record contains the opening process ID,
+state, negotiated rate, format, and channel count. The TUI and
+`alsachain status <profile>` read this record, so two profiles that share the
+same DAC are no longer both reported as playing merely because the physical
+PCM is running.
+
+Status files are mode `0600` in the managed state directory. The module leaves
+the last record after a client closes or crashes; ALSAChain checks whether that
+PID still exists, removes stale records, and then reports the profile as
+inactive. It never opens a physical PCM to determine profile activity.
+
+The plugin supports playback through interleaved little-endian `S16_LE`,
+`S24_3LE`, `S24_LE`, `S32_LE`, and `FLOAT_LE` streams. It is inserted below the
+public `plug` PCM, so ALSA can negotiate these formats with normal clients. A
+player that bypasses the public ALSAChain PCM and opens `hw:*`, `plughw:*`, or a
+different PCM is intentionally not attributed to any profile.
 
 ## Development
 
@@ -34,8 +88,16 @@ pnpm dev
 pnpm test
 pnpm lint
 pnpm build
+make build-native
+sudo make install-native
 pnpm start
 ```
+
+`make build-native` requires the ALSA development headers and `pkg-config`.
+`sudo make install-native` installs only
+`libasound_module_pcm_alsachain_status.so` into `/usr/lib/alsa-lib/`; it does
+not change ALSA configuration. Run `./run.sh repair` after installing it to
+regenerate profiles with the wrapper.
 
 ## Release build
 
@@ -62,6 +124,10 @@ GitHub Release exists, update it with:
 ```bash
 make aur-update VERSION=0.1.0
 ```
+
+The release archive includes the native status module. The `PKGBUILD` installs
+it under `/usr/lib/alsa-lib/` as part of the normal package transaction; users
+do not need to run `make install-native` after installing from the AUR.
 
 Or use the included scripts:
 
@@ -118,6 +184,10 @@ The profile list reports the active mode on the right:
 Crossfeed may be used with or without EQ, in either order. Crossfeed is DSP and
 therefore is never bit-perfect.
 
+The private `*_status_target` and `*_status` PCMs are implementation details.
+Applications must select the public PCM only, for example `dac_eq`; do not
+select the private names directly.
+
 ```text
 ctl.dac_eq {
     type equal
@@ -136,9 +206,20 @@ pcm.dac_eq_stage_01_eq {
     channels 2
 }
 
-pcm.dac_eq {
+pcm.dac_eq_status_target {
     type plug
     slave.pcm "dac_eq_stage_01_eq"
+}
+
+pcm.dac_eq_status {
+    type alsachain_status
+    status_path "/home/me/.local/state/alsachain/playback/dac_eq.status"
+    slave_name "dac_eq_status_target"
+}
+
+pcm.dac_eq {
+    type plug
+    slave.pcm "dac_eq_status"
     hint {
         show on
         description "ALSAChain EQ: USB DAC"
@@ -150,10 +231,18 @@ pcm.dac_eq {
 
 - ALSA identifiers must match `[a-zA-Z][a-zA-Z0-9_-]*`; target devices are stable `plughw:CARD=...,DEV=...` values.
 - Writes are atomic, backed up (ten recent copies), and rollback if CTL validation fails. Symlinked `.asoundrc` files are followed without replacing the link.
-- `status` only reads `/proc/asound`; it does not open an in-use PCM. Equalizer DSP is never bit-perfect. ALSA hardware parameters alone cannot establish the input's native rate.
+- Each public PCM includes an ALSAChain lifecycle wrapper. It records its own
+  `prepare`, `start`, `pause`, `stop`, and close transitions under XDG state,
+  so `status` and the profile list report the selected virtual PCM rather than
+  merely the shared physical device. Stale records from terminated clients are
+  discarded without opening an in-use PCM.
+- Equalizer DSP is never bit-perfect. ALSA hardware parameters alone cannot establish the input's native rate.
 - The installed `alsaequal` version must be validated on the target machine; distributions can place its PCM/CTL modules in different locations.
 - External `type equal` definitions are detected but never modified.
 - Changing a profile target affects new ALSA connections only. Stop and restart playback, or make the client reopen the public PCM, before expecting an active stream to move to the new DAC.
+- Profile activity is only authoritative for clients using the generated public
+  PCM. It does not identify streams routed through PipeWire/PulseAudio or a raw
+  hardware PCM outside ALSAChain.
 
 ## Safe first run
 

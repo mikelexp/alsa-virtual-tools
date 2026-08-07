@@ -14,6 +14,9 @@ mkdir -p "${OUT_DIR}"
 rm -f "${OUT_FILE}"
 
 cd "${ROOT_DIR}"
+make -C native
+install -m 755 "${ROOT_DIR}/build/libasound_module_pcm_alsachain_status.so" \
+  "${OUT_DIR}/libasound_module_pcm_alsachain_status.so"
 bun build src/index.tsx \
   --compile \
   --target=bun-linux-x64 \

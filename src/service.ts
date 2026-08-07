@@ -10,7 +10,7 @@ import {
 } from './model.js';
 import type { Paths } from './paths.js';
 import type { CommandRunner } from './runner.js';
-import { discoverDevices } from './alsa.js';
+import { discoverDevices, profileStatus } from './alsa.js';
 import { checkDependencies } from './deps.js';
 import { parseEqualizerBands, type EqualizerBand } from './equalizer.js';
 import { Store } from './store.js';
@@ -64,6 +64,9 @@ export class ALSAChainService {
   }
   async list() {
     return (await this.store.load()).profiles;
+  }
+  async playbackStatus(profile: Profile) {
+    return profileStatus(path.join(this.paths.playbackStatusDir, `${profile.id}.status`));
   }
   async updateStages(profileId: string, stages: DspStage[], processed = true): Promise<void> {
     const config = await this.store.load();

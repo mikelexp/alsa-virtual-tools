@@ -11,12 +11,14 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 
 ## Stack and Commands
 
-- Node.js 22+, TypeScript strict, ESM, React + Ink, pnpm, Vitest, ESLint, Prettier.
+- Node.js 22+, TypeScript strict, ESM, React + Ink, pnpm, Vitest, ESLint, Prettier, and a small ALSA C `ioplug` module.
 - Install/build: `./setup.sh`
 - Run TUI: `./run.sh`
 - Read-only diagnostics: `./run.sh doctor`, `./run.sh list`, `./run.sh validate`, `./run.sh print-config`
 - Regenerate the managed block: `./run.sh repair`
-- Verify changes: `pnpm format:check && pnpm lint && pnpm test && pnpm build`
+- Build the native module: `make build-native`
+- Install the native module for local hardware use: `sudo make install-native`
+- Verify changes: `make check` (includes format, lint, tests, TypeScript, and the native null-PCM smoke test)
 
 `pnpm-workspace.yaml` explicitly allows the local `esbuild` postinstall needed by Vitest and tsx.
 
@@ -25,11 +27,13 @@ It must not modify `/etc/asound.conf`, `pcm.!default`, PipeWire configuration, o
 - `src/model.ts`: Zod schemas, safe ALSA identifiers, ordered DSP-stage instances, and profile collision rules.
 - `src/store.ts`: XDG state, atomic writes, `.asoundrc` backups/rollback, controls-directory safety.
 - `src/asound.ts`: the isolated generated block, ordered DSP-chain rendering, and external `type equal` detection.
-- `src/alsa.ts`: `aplay -l` parsing and non-invasive `/proc/asound` state reading.
+- `src/alsa.ts`: `aplay -l` parsing, physical diagnostics, and managed profile-status record parsing.
 - `src/deps.ts`: executable/module/LADSPA validation and install suggestions only.
 - `src/service.ts`: transactional stage add/move/remove actions and integrated EQ CTL reads/writes.
 - `src/ui.tsx`: keyboard-only Ink UI.
 - `src/index.tsx`: TUI startup plus non-interactive CLI commands.
+- `native/alsachain-status.c`: userspace ALSA `ioplug` which proxies one profile PCM and records its lifecycle state.
+- `native/Makefile` and `native/smoke-test.sh`: build and null-PCM integration test for that module.
 
 External commands must go through the injectable `CommandRunner`; do not introduce shell-string execution for ALSA actions.
 
@@ -51,6 +55,10 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 - Use stable physical targets such as `plughw:CARD=<card-id>,DEV=<n>`, never volatile card indexes.
 - The public PCM needs an ALSA `hint` block so applications using `snd_device_name_hint`/`aplay -L` can enumerate it.
 - Public BITPERFECT PCMs use `type plug` over the stored `plughw` target so normal ALSA clients can negotiate the physical device's channel, rate, and format constraints.
+- Every public PCM must remain wrapped by its profile-specific `alsachain_status` PCM. It is the authoritative source of profile playback state; never infer a profile's state from a shared physical `/proc/asound/card*/pcm*p` stream.
+- The wrapper's `status_path` must remain inside `Paths.playbackStatusDir`, and its `slave_name` must refer to a generated private `*_status_target` PCM. Applications must only enumerate/select the public PCM with its ALSA `hint`.
+- The module writes a PID-bound record under `playbackStatusDir`; stale records are cleaned only after checking that their owning PID has exited. Do not delete live records or read status by opening a PCM.
+- The native plugin is userspace code installed at `/usr/lib/alsa-lib/libasound_module_pcm_alsachain_status.so`, never a kernel module. Keep `PKGBUILD`, release packaging, `scripts/install.sh`, dependency diagnostics, and README installation instructions synchronized when changing it.
 - Validate a generated CTL with `amixer -D <ctl> scontrols`; do not open a physical PCM merely to probe it.
 - `alsaequal` is DSP, so it is never bit-perfect. Physical `hw_params` alone do not reveal source bit depth or native sample rate.
 - The profile list reports `EFFECTIVE BITPERFECT` when a stereo profile targets a physical PCM with a different channel count. ALSA preserves the audible stereo channels while padding the physical stream; this is not strict whole-stream bit-perfectness.
@@ -69,7 +77,7 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 
 ## Integration Notes
 
-- Supported dependencies are `alsa-utils`, `caps`, and `alsaequal`.
+- Supported dependencies are `alsa-lib`, `alsa-utils`, `caps`, and `alsaequal`; ALSAChain also ships its own status PCM module.
 - A generated public PCM must be visible through `aplay -L` and its corresponding CTL must validate through `amixer`.
 - Sone support lives in `/opt/sone`, not this repository. Its `access-alsa-devices` branch enumerates ALSA PCM hints so it can list public virtual PCMs.
 
@@ -77,4 +85,5 @@ External commands must go through the injectable `CommandRunner`; do not introdu
 
 - Tests must never use the real `HOME`, write the real `.asoundrc`, or open physical ALSA devices.
 - Use temporary XDG/HOME paths and fake command runners for persistence/dependency tests.
+- Keep the native smoke test on the ALSA `null` PCM; it must not open a physical device. Use `make test-native` to validate the module after native changes.
 - Do not claim DAC-dependent behavior verified unless it was observed with the real hardware; document the gap instead.

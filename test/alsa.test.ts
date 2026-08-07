@@ -5,6 +5,7 @@ import {
   parseCards,
   parseHwParams,
   parsePlaybackChannels,
+  parseProfileStatus,
   parseStatus,
 } from '../src/alsa.js';
 describe('ALSA parsers', () => {
@@ -22,6 +23,18 @@ describe('ALSA parsers', () => {
     expect(parseStatus('state: RUNNING\n')).toBe('Playing');
     expect(parseStatus('state: XRUN\n')).toBe('XRUN');
     expect(parseStatus('closed\n')).toBe('Inactive');
+  });
+  it('parses an instrumented profile state', () => {
+    expect(
+      parseProfileStatus('pid: 123\nstate: Playing\nformat: S24_LE\nrate: 96000\nchannels: 2\n'),
+    ).toMatchObject({
+      state: 'Playing',
+      format: 'S24_LE',
+      logicalBits: 24,
+      containerBits: 32,
+      rate: '96000',
+      channels: 2,
+    });
   });
   it.each([
     ['S16_LE', 16, 16],

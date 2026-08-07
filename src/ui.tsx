@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 import type { Device, PlaybackState } from './alsa.js';
-import { hasChannelAdaptation, physicalStatus } from './alsa.js';
+import { hasChannelAdaptation } from './alsa.js';
 import type { DependencyReport } from './deps.js';
 import { EqualizerScreen } from './equalizer-ui.js';
 import { equalizerBarRows, equalizerCutBarRows, type EqualizerBand } from './equalizer.js';
@@ -120,11 +120,7 @@ export function App({ service, report }: { service: ALSAChainService; report: De
     setDevices(nextDevices);
     const mapped = await Promise.all(
       nextProfiles.map(async (profile) => {
-        const device = nextDevices.find((candidate) => candidate.target === profile.target);
-        return [
-          profile.id,
-          device ? await physicalStatus(device) : { state: 'Unavailable' as const },
-        ] as const;
+        return [profile.id, await service.playbackStatus(profile)] as const;
       }),
     );
     setStates(Object.fromEntries(mapped));
