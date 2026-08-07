@@ -28,7 +28,7 @@ jobs:
           cache: pnpm
 
       - name: Install native ALSA build dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install --yes alsa-utils libasound2-dev pkg-config
 
       - name: Install dependencies
         run: |
